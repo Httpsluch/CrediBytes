@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CrediBytes</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+ 
+  <div class="header">
+    <div class="header-logo">🛡</div>
+    <div class="header-text">
+      <h1>CrediBytes</h1>
+      <p>SEC OLA Ad Legitimacy Scanner</p>
+    </div>
+  </div>
+ 
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" data-tab="scans">Scan Results</div>
+    <div class="tab" data-tab="settings">Settings</div>
+  </div>
+ 
+  <!-- ── Scan Results Panel ── -->
+  <div class="panel active" id="panel-scans">
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-num green" id="count-legit">0</div>
+        <div class="stat-label">Verified</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num orange" id="count-unverified">0</div>
+        <div class="stat-label">Unverified</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num red" id="count-danger">0</div>
+        <div class="stat-label">Unregistered</div>
+      </div>
+    </div>
+ 
+    <div class="feed-header">
+      Recent Scans
+      <button class="clear-btn" id="clear-btn">Clear all</button>
+    </div>
+ 
+    <div class="feed" id="feed">
+      <div class="empty" id="empty-state">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-title">No ads scanned yet</div>
+        <div class="empty-sub">Browse Facebook and CrediBytes<br>will automatically detect OLA ads.</div>
+      </div>
+    </div>
+  </div>
+ 
+  <!-- ── Settings Panel ── -->
+  <div class="panel" id="panel-settings">
+ 
+    <div class="settings-section">
+      <div class="settings-label">Scanning</div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-desc">Enable scanning</div>
+          <div class="toggle-sub">Detect OLA ads on Facebook</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="toggle-scanning" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+ 
+    <div class="settings-section">
+      <div class="settings-label">Display Mode</div>
+      <div class="radio-group">
+        <label class="radio-row">
+          <input type="radio" name="display-mode" value="badge" checked>
+          <div>
+            <div>Inline badge</div>
+            <div style="font-size:10px;color:#999">Shows a label directly on each ad</div>
+          </div>
+        </label>
+        <label class="radio-row">
+          <input type="radio" name="display-mode" value="floating">
+          <div>
+            <div>Floating widget</div>
+            <div style="font-size:10px;color:#999">Draggable panel on the page</div>
+          </div>
+        </label>
+        <label class="radio-row">
+          <input type="radio" name="display-mode" value="sidepanel">
+          <div>
+            <div>Side panel</div>
+            <div style="font-size:10px;color:#999">Opens in Chrome's right side panel</div>
+          </div>
+        </label>
+      </div>
+    </div>
+ 
+    <div class="settings-section">
+      <div class="settings-label">Data</div>
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-desc">Clear scan history</div>
+          <div class="toggle-sub">Removes all scanned ad records</div>
+        </div>
+        <button class="clear-btn" id="clear-btn-settings" style="font-size:11px;color:#e63946;font-weight:600;">Clear</button>
+      </div>
+      <div style="font-size:10px;color:#bbb;margin-top:8px;">
+        SEC reference: Philippines OLA Registry (153 platforms)
+      </div>
+    </div>
+ 
+  </div>
+ 
+  <div class="footer">
+    <span>CrediBytes v1.1</span>
+    <span id="scan-count">0 scans</span>
+  </div>
+ 
+  <script src="popup.js"></script>
+</body>
+</html>
