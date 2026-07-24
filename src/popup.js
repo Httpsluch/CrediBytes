@@ -1,6 +1,14 @@
 /**
  * popup.js — CrediBytes
  * Handles scan list rendering, clear button, settings tab, and display mode.
+ *
+ * v1.1 changes:
+ *   - getBadgeClass() now uses scan.isStoreUrl (saved by content.js) to
+ *     correctly apply "danger" class — fixes missing field from old payload
+ *   - renderScans() shows officialUrl for verified matches
+ *   - renderScans() shows suggestion block for unverified ads
+ *   - ML meta line now shows riskDesc from backend instead of old
+ *     "ML: App/No app (X%)" text; falls back gracefully for older records
  */
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -13,11 +21,13 @@ function timeAgo(ts) {
 }
 
 function getBadgeClass(scan) {
-  if (scan.legitimacy === "legitimate")       return "legitimate";
+  if (scan.legitimacy === "legitimate")        return "legitimate";
   if (scan.legitimacy === "likely_legitimate") return "likely";
+  // isStoreUrl is now saved in the payload by content.js v1.1
+  // Graceful fallback: if the field is missing (older stored scan), treat as unverified
   if (scan.legitimacy === "unverified" &&
-      (scan.status === "no_reference_match") &&
-      scan.storeUrl) return "danger";
+      scan.status === "no_reference_match" &&
+      scan.isStoreUrl) return "danger";
   return "unverified";
 }
 
@@ -34,7 +44,7 @@ function renderScans(scans) {
   if (!scans || scans.length === 0) {
     empty.style.display = "block";
     countEl.textContent = "0 scans";
-    document.getElementById("count-legit").textContent     = "0";
+    document.getElementById("count-legit").textContent      = "0";
     document.getElementById("count-unverified").textContent = "0";
     document.getElementById("count-danger").textContent     = "0";
     return;
@@ -54,7 +64,7 @@ function renderScans(scans) {
     const item = document.createElement("div");
     item.className = `scan-item ${cls}`;
 
-    // Top row: badge + time
+    // ── Top row: badge chip + timestamp ──
     const top = document.createElement("div");
     top.className = "scan-top";
 
@@ -69,12 +79,12 @@ function renderScans(scans) {
     top.appendChild(badge);
     top.appendChild(time);
 
-    // Advertiser name — use actual page name, fall back to SEC company
+    // ── Advertiser name ──
     const name = document.createElement("div");
     name.className = "scan-name";
     name.textContent = scan.advertiserName || scan.company || "—";
 
-    // Reason
+    // ── Stage 2 reason ──
     const reason = document.createElement("div");
     reason.className = "scan-reason";
     reason.textContent = scan.reason || "";
@@ -83,31 +93,60 @@ function renderScans(scans) {
     item.appendChild(name);
     item.appendChild(reason);
 
-    // SEC number and ML — only if present
-    if (scan.sec || scan.isApp !== null) {
-      const meta = document.createElement("div");
-      meta.className = "scan-meta";
-      const parts = [];
-      if (scan.sec) parts.push(`SEC: ${scan.sec}`);
-      if (scan.isApp !== null) {
-        parts.push(`ML: ${scan.isApp ? "App" : "No app"} (${Math.round((scan.prob || 0) * 100)}%)`);
+    // ── Official URL (verified matches only) ──
+    if (scan.officialUrl) {
+      const urlEl = document.createElement("div");
+      urlEl.className = "scan-meta";
+      urlEl.textContent = "Official: " + scan.officialUrl;
+      item.appendChild(urlEl);
+    }
+
+    // ── SEC number ──
+    if (scan.sec) {
+      const secEl = document.createElement("div");
+      secEl.className = "scan-meta";
+      secEl.textContent = "SEC: " + scan.sec;
+      item.appendChild(secEl);
+    }
+
+    // ── Fuzzy suggestion (unverified only) ──
+    if (!scan.sec && scan.suggestion) {
+      const sugg = document.createElement("div");
+      sugg.className = "scan-meta scan-suggestion";
+      sugg.textContent = "Possible match (unverified): " + scan.suggestion.company +
+        " · SEC: " + scan.suggestion.sec;
+      item.appendChild(sugg);
+    }
+
+    // ── Stage 1 ML risk signal ──
+    // v1.1: show riskDesc from backend (human-readable tier string).
+    // Fallback: if riskDesc is absent (older scan record), show old-style text.
+    const hasRiskDesc = scan.riskDesc && typeof scan.riskDesc === "string";
+    const hasOldML    = scan.isApp !== null && scan.isApp !== undefined;
+
+    if (hasRiskDesc || hasOldML) {
+      const mlEl = document.createElement("div");
+      mlEl.className = "scan-meta";
+      if (hasRiskDesc) {
+        mlEl.textContent = scan.riskDesc;
+      } else {
+        // Graceful fallback for pre-v1.1 stored scans
+        const pct = Math.round((scan.prob || 0) * 100);
+        mlEl.textContent = `ML: ${scan.isApp ? "App" : "No app"} (${pct}%)`;
       }
-      meta.textContent = parts.join("  ·  ");
-      item.appendChild(meta);
+      item.appendChild(mlEl);
     }
 
     feed.appendChild(item);
   });
 
   document.getElementById("count-legit").textContent      = legit;
-  document.getElementById("count-unverified").textContent  = unverified;
-  document.getElementById("count-danger").textContent      = danger;
+  document.getElementById("count-unverified").textContent = unverified;
+  document.getElementById("count-danger").textContent     = danger;
 }
 
 // ── Clear scans ────────────────────────────────────────────────────────────────
-// Fix: send CLEAR_SCANS message to background.js, then re-render immediately.
-// Previously, renderScans([]) ran before storage was actually cleared,
-// causing the UI to re-populate on the next storage.onChanged event.
+// Routes through background.js (single writer) to prevent race conditions.
 
 function clearScans() {
   chrome.runtime.sendMessage({ type: "CLEAR_SCANS" }, () => {
@@ -157,7 +196,6 @@ document.querySelectorAll("input[name='display-mode']").forEach(radio => {
       s.displayMode = radio.value;
       chrome.storage.local.set({ settings: s });
 
-      // If switching to side panel, open it immediately
       if (radio.value === "sidepanel") {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           if (tabs[0]) chrome.sidePanel.open({ tabId: tabs[0].id });

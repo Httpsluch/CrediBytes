@@ -6,6 +6,11 @@
  * turning all Pass 1 lookups from O(N) loops into O(1) Map.get() calls.
  * Only Pass 2 (domain) and Pass 3 (name) still iterate — both are
  * skipped entirely for store URLs, keeping the common path fast.
+ *
+ * v1.1 additions:
+ *   - findClosestSecEntry()  — token-overlap fuzzy suggestion (≥40% threshold)
+ *   - result() now accepts 5th argument: suggestion (may be null)
+ *   - Both no_reference_match returns include a fuzzy suggestion when possible
  */
 
 (function () {
@@ -86,12 +91,56 @@
 
   buildIndexes();
 
+  // ── Fuzzy suggestion (token overlap ≥ 40%) ────────────────────────────────
+  // Used only for unverified results to surface the closest SEC entry by name.
+  // Explicitly labeled as a suggestion, never as a verification.
+
+  function tokenize(str) {
+    // Split on whitespace/punctuation; filter out short stop-words
+    const STOP = new Set(["inc", "corp", "lending", "finance", "corporation",
+                           "the", "of", "and", "co", "ph", "philippines"]);
+    return str.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter(t => t.length > 1 && !STOP.has(t));
+  }
+
+  function tokenOverlap(a, b) {
+    if (!a.length || !b.length) return 0;
+    const setA = new Set(a);
+    const setB = new Set(b);
+    let common = 0;
+    for (const t of setA) { if (setB.has(t)) common++; }
+    // Jaccard-style: intersection / union
+    return common / (setA.size + setB.size - common);
+  }
+
+  function findClosestSecEntry(claimedAppName, claimedCompany) {
+    const queryTokens = tokenize((claimedAppName + " " + claimedCompany).trim());
+    if (queryTokens.length === 0) return null;
+
+    let bestRef   = null;
+    let bestScore = 0;
+
+    for (const ref of SEC_REFERENCE) {
+      const refTokens = tokenize((ref.appName + " " + ref.company).trim());
+      const score = tokenOverlap(queryTokens, refTokens);
+      if (score > bestScore) {
+        bestScore = score;
+        bestRef   = ref;
+      }
+    }
+
+    // Only return a suggestion if overlap meets the 40% threshold
+    return bestScore >= 0.40 ? bestRef : null;
+  }
+
   // ── Main matcher ───────────────────────────────────────────────────────────
 
   function matchUrl(adUrl, claimedAppName = "", claimedCompany = "", fixedAppleUrl = "") {
     if (!adUrl) {
       return result("no_url", null, "broken_or_missing_link",
-        "No redirect URL found in this ad.");
+        "No redirect URL found in this ad.", null);
     }
 
     const adPlayId  = playPackageId(adUrl);
@@ -103,18 +152,20 @@
     if (adPlayId) {
       const ref = playIndex.get(adPlayId);
       if (ref) return result("exact_play_store_package_match", ref, "legitimate",
-        `Play Store package ID matches SEC-registered app: "${ref.appName || ref.company}" (${ref.sec}).`);
+        `Play Store package ID matches SEC-registered app: "${ref.appName || ref.company}" (${ref.sec}).`, null);
     }
     if (adAppleId) {
       const ref = appleIndex.get(adAppleId);
       if (ref) return result("exact_app_store_id_match", ref, "legitimate",
-        `App Store ID matches SEC-registered app: "${ref.appName || ref.company}" (${ref.sec}).`);
+        `App Store ID matches SEC-registered app: "${ref.appName || ref.company}" (${ref.sec}).`, null);
     }
 
     // Store URL with no ID match → definitively unregistered, skip remaining passes
     if (store) {
+      const suggestion = findClosestSecEntry(claimedAppName, claimedCompany);
       return result("no_reference_match", null, "unverified",
-        "This app's package ID or Apple ID has no SEC registration — it may be an undeclared or illegal lending application.");
+        "This app's package ID or Apple ID has no SEC registration — it may be an undeclared or illegal lending application.",
+        suggestion);
     }
 
     // Pass 2 — domain / subdomain match via Map (non-store only)
@@ -122,7 +173,7 @@
       // Exact host match
       const ref = domainIndex.get(adHost);
       if (ref) return result("same_domain_match", ref, "legitimate",
-        `Domain matches SEC-registered website of "${ref.company}" (${ref.sec}).`);
+        `Domain matches SEC-registered website of "${ref.company}" (${ref.sec}).`, null);
 
       // Subdomain match: walk up the hostname and check each suffix
       const parts = adHost.split(".");
@@ -130,7 +181,7 @@
         const suffix = parts.slice(i).join(".");
         const parentRef = domainIndex.get(suffix);
         if (parentRef) return result("same_domain_match", parentRef, "legitimate",
-          `Subdomain matches SEC-registered website of "${parentRef.company}" (${parentRef.sec}).`);
+          `Subdomain matches SEC-registered website of "${parentRef.company}" (${parentRef.sec}).`, null);
       }
     }
 
@@ -144,10 +195,10 @@
         const refCompany = normalizeName(ref.company);
         if (normCompany && refCompany && normCompany === refCompany) {
           return result("exact_name_match", ref, "legitimate",
-            `App name and company name match SEC registry: "${ref.company}" (${ref.sec}).`);
+            `App name and company name match SEC registry: "${ref.company}" (${ref.sec}).`, null);
         }
         return result("app_name_match", ref, "likely_legitimate",
-          `App name matches SEC registry entry for "${ref.company}" (${ref.sec}), but company name differs.`);
+          `App name matches SEC registry entry for "${ref.company}" (${ref.sec}), but company name differs.`, null);
       }
     }
 
@@ -156,17 +207,20 @@
       for (const ref of candidates) {
         if (!normalizeName(ref.appName)) {
           return result("exact_company_name_match", ref, "legitimate",
-            `Company name matches SEC-registered entity: "${ref.company}" (${ref.sec}).`);
+            `Company name matches SEC-registered entity: "${ref.company}" (${ref.sec}).`, null);
         }
       }
     }
 
+    // No match — run fuzzy suggestion before returning unverified
+    const suggestion = findClosestSecEntry(claimedAppName, claimedCompany);
     return result("no_reference_match", null, "unverified",
-      "No matching SEC-registered OLA found for this ad link.");
+      "No matching SEC-registered OLA found for this ad link.", suggestion);
   }
 
-  function result(status, ref, legitimacy, reason) {
-    return { status, ref, legitimacy, reason };
+  // 5th arg: suggestion — closest SEC entry by name overlap, or null
+  function result(status, ref, legitimacy, reason, suggestion) {
+    return { status, ref, legitimacy, reason, suggestion };
   }
 
   window.CrediBytesMatcher = { matchUrl, playPackageId, appleAppId, normHost, isStoreUrl };

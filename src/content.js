@@ -1,6 +1,16 @@
 /**
  * content.js — CrediBytes
  * Detects OLA ads on Facebook, runs SEC matching, injects badges/floating widget.
+ *
+ * v1.1 changes:
+ *   - isOLAAd() now accepts advertiserName as 3rd arg; catches "message us"
+ *     style ads where the page name itself signals a lending entity
+ *   - Unified OLA_KEYWORDS list (removed strong/secondary split — the
+ *     advertiserName signal handles false-positive reduction)
+ *   - ML badge text reworded to risk_desc from backend (human-readable tier)
+ *   - Fuzzy SEC suggestion displayed in badge detail panel when unverified
+ *   - SAVE_SCAN payload includes isStoreUrl, riskLabel, riskDesc,
+ *     officialUrl, suggestion (fixes popup.js getBadgeClass "danger" tier)
  */
 
 (function () {
@@ -9,41 +19,35 @@
   const BADGE_CLASS = "credibytes-badge";
   const PROCESSED   = "credibytes-processed";
 
-  // ── Stronger OLA keyword detection ─────────────────────────────────────────
-  // Requires at least one STRONG lending signal (not just "cash" or "credit"
-  // which appear in non-lending ads like e-commerce or credit card promos).
+  // ── OLA keyword detection ───────────────────────────────────────────────────
+  // Single unified list — advertiserName is now also checked, so the
+  // strong/secondary split is no longer needed. Any keyword hit anywhere
+  // in adText + landingUrl + advertiserName qualifies the ad for scanning.
 
-  const STRONG_OLA_KEYWORDS = [
+  const OLA_KEYWORDS = [
+    // Explicit lending phrases
     "online lending", "lending app", "loan app", "cash loan", "personal loan",
     "instant loan", "quick loan", "pautang online", "online pautang",
     "borrow money", "borrow cash", "mag-apply ng loan", "apply for loan",
     "loan approval", "fast approval loan", "no collateral loan",
-    "lending corporation", "lending inc", "lending company",
+    "lending corporation", "lending inc", "lending company", "lending corp",
+    "financing inc", "financing corp", "finance corp", "finance inc",
     "utang online", "pera agad", "cash agad", "loan agad",
     "ola app", "lending platform",
+    // Generic but valid in this context (covered by advertiserName check below)
+    "loan", "lending", "borrow", "pautang", "utang",
   ];
 
-  // Secondary keywords — only match if a strong keyword is also present
-  const SECONDARY_KEYWORDS = [
-    "loan", "lending", "borrow", "pautang", "utang", "installment loan",
-  ];
+  // Store URL hosts — Play/App Store links pointing to apps
+  const STORE_HOSTS = ["play.google.com", "apps.apple.com"];
 
-  // Domains that are definitely store/lending links
-  const LENDING_URL_PATTERNS = [
-    "play.google.com", "apps.apple.com",
-    "loan", "lend", "credit", "peso", "pera", "cash", "borrow",
-  ];
+  function isOLAAd(adText, landingUrl, advertiserName = "") {
+    const haystack = (adText + " " + landingUrl + " " + advertiserName).toLowerCase();
 
-  function isOLAAd(adText, landingUrl) {
-    const haystack = (adText + " " + landingUrl).toLowerCase();
+    // Any keyword match anywhere is sufficient
+    if (OLA_KEYWORDS.some(kw => haystack.includes(kw))) return true;
 
-    // Check strong signals first — any one is enough
-    if (STRONG_OLA_KEYWORDS.some(kw => haystack.includes(kw))) return true;
-
-    // Store URLs pointing to apps are likely lending if they hit secondary keywords
-    const isStoreUrl = LENDING_URL_PATTERNS.slice(0, 2).some(d => landingUrl.includes(d));
-    if (isStoreUrl && SECONDARY_KEYWORDS.some(kw => haystack.includes(kw))) return true;
-
+    // Bare store URL with no keyword — probably not an OLA
     return false;
   }
 
@@ -74,13 +78,10 @@
 
   function getAdvertiserName(adEl) {
     const selectors = [
-      // Most reliable: the page name link at the top of the sponsored post
       "h2 a[role='link']",
       "h3 a[role='link']",
-      // Fallback: any strong link with auto direction text
       "a[role='link'] > span[dir='auto']",
       "a[href*='facebook.com/'] strong",
-      // Last resort: first strong text near the top
       "strong",
     ];
 
@@ -155,10 +156,12 @@
   function injectBadge(adEl, matchResult, stage1Result, advertiserName) {
     adEl.querySelector("." + BADGE_CLASS)?.remove();
 
-    const { legitimacy, reason, ref, status } = matchResult;
-    const isApp = stage1Result?.is_app ?? null;
-    const prob  = stage1Result?.probability ?? null;
-    const store = window.CrediBytesMatcher.isStoreUrl(matchResult._adUrl || "");
+    const { legitimacy, reason, ref, status, suggestion } = matchResult;
+    const store      = window.CrediBytesMatcher.isStoreUrl(matchResult._adUrl || "");
+    const riskLabel  = stage1Result?.risk_label  ?? null;
+    const riskDesc   = stage1Result?.risk_desc   ?? null;
+    const isApp      = stage1Result?.is_app      ?? null;
+    const prob       = stage1Result?.probability ?? null;
 
     let badgeClass, icon, label;
     if (legitimacy === "legitimate") {
@@ -197,14 +200,35 @@
       detail.appendChild(p);
     };
 
+    // Primary verdict reason (Stage 2)
     addLine(reason);
+
+    // SEC registration details (when matched)
     if (ref) {
       addLine("SEC No.: " + ref.sec);
       if (ref.appName) addLine("Registered as: " + ref.appName);
+      if (ref.websiteUrl) addLine("Official site: " + ref.websiteUrl);
     }
-    if (isApp !== null) {
-      addLine("ML: " + (isApp ? "Likely has app" : "No app detected") +
-        " (" + Math.round(prob * 100) + "% confidence)");
+
+    // Fuzzy suggestion for unverified ads
+    if (!ref && suggestion) {
+      addLine("─────────────────────");
+      addLine("Possible match (not verified):");
+      addLine(suggestion.company);
+      addLine("SEC No.: " + suggestion.sec);
+      if (suggestion.websiteUrl) addLine("Official site: " + suggestion.websiteUrl);
+    }
+
+    // Stage 1 ML risk signal (reworded — human-readable tier from backend)
+    if (riskDesc) {
+      addLine("─────────────────────");
+      addLine(riskDesc);
+    } else if (isApp !== null) {
+      // Fallback for older backend responses that don't yet return risk_desc
+      const pct = Math.round((prob ?? 0) * 100);
+      addLine("Risk signal: " + pct + "% — " +
+        (isApp ? "profile matches patterns of SEC-registered OLA platforms."
+               : "profile does not match typical patterns of SEC-registered OLA platforms."));
     }
 
     toggle.addEventListener("click", (e) => {
@@ -219,15 +243,29 @@
     badge.appendChild(detail);
     adEl.insertBefore(badge, adEl.firstChild);
 
-    // Save via background.js (single storage writer)
+    // ── Save via background.js (single storage writer) ──────────────────────
+    // isStoreUrl is included so popup.js getBadgeClass() can apply "danger"
+    // correctly without needing to re-derive it from the URL.
     chrome.runtime.sendMessage({
       type: "SAVE_SCAN",
       payload: {
-        ts: Date.now(), legitimacy, status, label, reason,
+        ts:             Date.now(),
+        legitimacy,
+        status,
+        label,
+        reason,
         advertiserName: advertiserName || "",
-        company: ref?.company || "",
-        sec:     ref?.sec     || "",
-        isApp, prob,
+        company:        ref?.company      || "",
+        sec:            ref?.sec          || "",
+        officialUrl:    ref?.websiteUrl   || "",
+        isStoreUrl:     store,
+        isApp,
+        prob,
+        riskLabel:      riskLabel || null,
+        riskDesc:       riskDesc  || null,
+        suggestion:     suggestion
+          ? { company: suggestion.company, sec: suggestion.sec, websiteUrl: suggestion.websiteUrl || "" }
+          : null,
       },
     });
   }
@@ -239,9 +277,7 @@
 
     const widget = document.createElement("div");
     widget.id = "cb-floating";
-    widget.innerHTML = "";  // built with createElement below
 
-    // Header bar
     const header = document.createElement("div");
     header.id = "cb-float-header";
 
@@ -260,7 +296,6 @@
     header.appendChild(title);
     header.appendChild(closeBtn);
 
-    // Content area
     const content = document.createElement("div");
     content.id = "cb-float-content";
     content.textContent = "Scanning for OLA ads...";
@@ -281,9 +316,9 @@
     });
     document.addEventListener("mousemove", (e) => {
       if (!isDragging) return;
-      widget.style.left = (origLeft + e.clientX - startX) + "px";
-      widget.style.top  = (origTop  + e.clientY - startY) + "px";
-      widget.style.right = "auto";
+      widget.style.left   = (origLeft + e.clientX - startX) + "px";
+      widget.style.top    = (origTop  + e.clientY - startY) + "px";
+      widget.style.right  = "auto";
       widget.style.bottom = "auto";
     });
     document.addEventListener("mouseup", () => { isDragging = false; });
@@ -304,10 +339,12 @@
       content.textContent = "";
       scans.forEach(scan => {
         const row = document.createElement("div");
-        row.className = "cb-float-row cb-float-" + (scan.legitimacy === "legitimate" ? "legit" :
-          scan.legitimacy === "likely_legitimate" ? "likely" : "unverified");
-        const icon = scan.legitimacy === "legitimate" ? "✅" :
-          scan.legitimacy === "likely_legitimate" ? "🔍" : "⚠️";
+        row.className = "cb-float-row cb-float-" + (
+          scan.legitimacy === "legitimate"        ? "legit"      :
+          scan.legitimacy === "likely_legitimate" ? "likely"     : "unverified"
+        );
+        const icon = scan.legitimacy === "legitimate"        ? "✅" :
+                     scan.legitimacy === "likely_legitimate" ? "🔍" : "⚠️";
         const name = scan.advertiserName || scan.company || "Unknown";
         row.textContent = icon + " " + name;
         content.appendChild(row);
@@ -347,8 +384,8 @@
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
       .cb-float-row:last-child { border-bottom: none; }
-      .cb-float-legit     { color: #69f0ae; }
-      .cb-float-likely    { color: #ffd740; }
+      .cb-float-legit      { color: #69f0ae; }
+      .cb-float-likely     { color: #ffd740; }
       .cb-float-unverified { color: #ff6e40; }
     `;
     document.head.appendChild(s);
@@ -392,7 +429,7 @@
     adEl.setAttribute(PROCESSED, "1");
 
     const { landingUrl, adText, claimedAppName, advertiserName } = extractAdData(adEl);
-    if (!isOLAAd(adText, landingUrl)) return;
+    if (!isOLAAd(adText, landingUrl, advertiserName)) return;
 
     const matchResult = window.CrediBytesMatcher.matchUrl(
       landingUrl, claimedAppName, advertiserName
@@ -401,13 +438,42 @@
 
     const stage1Result = await requestStage1Prediction(advertiserName, claimedAppName);
 
-    // Check display mode
     chrome.storage.local.get("settings", (data) => {
       const mode = data.settings?.displayMode || "badge";
       if (mode === "badge" || mode === "sidepanel") {
         injectBadge(adEl, matchResult, stage1Result, advertiserName);
       }
       if (mode === "floating") {
+        // Floating mode still saves the scan (via injectBadge path is skipped,
+        // so we save directly here to keep history consistent)
+        const { legitimacy, reason, ref, status, suggestion } = matchResult;
+        const store     = window.CrediBytesMatcher.isStoreUrl(landingUrl);
+        const riskLabel = stage1Result?.risk_label  ?? null;
+        const riskDesc  = stage1Result?.risk_desc   ?? null;
+        const isApp     = stage1Result?.is_app      ?? null;
+        const prob      = stage1Result?.probability ?? null;
+
+        let label;
+        if (legitimacy === "legitimate")              label = "SEC Verified";
+        else if (legitimacy === "likely_legitimate")  label = "Likely Legitimate";
+        else if (status === "no_reference_match" && store) label = "Unregistered App";
+        else                                          label = "Unverified";
+
+        chrome.runtime.sendMessage({
+          type: "SAVE_SCAN",
+          payload: {
+            ts: Date.now(), legitimacy, status, label, reason,
+            advertiserName: advertiserName || "",
+            company:        ref?.company    || "",
+            sec:            ref?.sec        || "",
+            officialUrl:    ref?.websiteUrl || "",
+            isStoreUrl:     store,
+            isApp, prob, riskLabel, riskDesc,
+            suggestion: suggestion
+              ? { company: suggestion.company, sec: suggestion.sec, websiteUrl: suggestion.websiteUrl || "" }
+              : null,
+          },
+        });
         updateFloatingContent();
       }
     });

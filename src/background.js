@@ -10,7 +10,7 @@
  * race conditions with content.js.
  */
 
-const BACKEND_URL = 'http://127.0.0.1:8000'
+const BACKEND_URL = 'https://credibytes-backend.onrender.com'
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log("CrediBytes installed.");
