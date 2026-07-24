@@ -226,7 +226,7 @@
     } else if (isApp !== null) {
       // Fallback for older backend responses that don't yet return risk_desc
       const pct = Math.round((prob ?? 0) * 100);
-      addLine("Risk signal: " + pct + "% — " +
+      addLine("Profile score: " + pct + "% — " +
         (isApp ? "profile matches patterns of SEC-registered OLA platforms."
                : "profile does not match typical patterns of SEC-registered OLA platforms."));
     }

@@ -132,7 +132,7 @@ function renderScans(scans) {
       } else {
         // Graceful fallback for pre-v1.1 stored scans
         const pct = Math.round((scan.prob || 0) * 100);
-        mlEl.textContent = `ML: ${scan.isApp ? "App" : "No app"} (${pct}%)`;
+        mlEl.textContent = `Profile score: ${pct}% - ${scan.isApp ? "profile resembles" : "profile does not resemble"} typical SEC-Registered OLA platform`;
       }
       item.appendChild(mlEl);
     }
