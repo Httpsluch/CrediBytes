@@ -3,26 +3,34 @@
 <head>
   <meta charset="UTF-8" />
   <title>CrediBytes</title>
+  <!-- Runs before the stylesheet is applied to the body, so the popup/panel
+       sizing class is present at first paint. -->
+  <script src="panel-init.js"></script>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
- 
+
   <div class="header">
     <div class="header-logo">🛡</div>
     <div class="header-text">
       <h1>CrediBytes</h1>
       <p>SEC OLA Ad Legitimacy Scanner</p>
     </div>
+    <!-- Hidden when already running as the side panel (see popup.js) -->
+    <button class="expand-btn" id="expand-btn" type="button"
+            title="Open in side panel" aria-label="Open in side panel">⇥</button>
   </div>
- 
-  <!-- Tabs -->
-  <div class="tabs">
-    <div class="tab active" data-tab="scans">Scan Results</div>
-    <div class="tab" data-tab="settings">Settings</div>
+
+  <!-- Tabs: real <button>s so they are keyboard reachable -->
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="scans" role="tab"
+            aria-selected="true" aria-controls="panel-scans">Scan Results</button>
+    <button class="tab" data-tab="settings" role="tab"
+            aria-selected="false" aria-controls="panel-settings">Settings</button>
   </div>
- 
+
   <!-- ── Scan Results Panel ── -->
-  <div class="panel active" id="panel-scans">
+  <div class="panel active" id="panel-scans" role="tabpanel">
     <div class="stats">
       <div class="stat">
         <div class="stat-num green" id="count-legit">0</div>
@@ -37,86 +45,88 @@
         <div class="stat-label">Unregistered</div>
       </div>
     </div>
- 
+
     <div class="feed-header">
-      Recent Scans
+      <span>Recent Scans</span>
       <button class="clear-btn" id="clear-btn">Clear all</button>
     </div>
- 
+
     <div class="feed" id="feed">
       <div class="empty" id="empty-state">
         <div class="empty-icon">🔍</div>
         <div class="empty-title">No ads scanned yet</div>
-        <div class="empty-sub">Browse Facebook and CrediBytes<br>will automatically detect OLA ads.</div>
+        <div class="empty-sub">Browse Facebook and CrediBytes will<br>automatically check OLA ads against<br>the SEC registry.</div>
       </div>
     </div>
   </div>
- 
+
   <!-- ── Settings Panel ── -->
-  <div class="panel" id="panel-settings">
- 
+  <div class="panel" id="panel-settings" role="tabpanel">
+
     <div class="settings-section">
       <div class="settings-label">Scanning</div>
       <div class="toggle-row">
         <div>
           <div class="toggle-desc">Enable scanning</div>
-          <div class="toggle-sub">Detect OLA ads on Facebook</div>
+          <div class="toggle-sub">Detect and check OLA ads on Facebook</div>
         </div>
         <label class="switch">
-          <input type="checkbox" id="toggle-scanning" checked>
+          <input type="checkbox" id="toggle-scanning" checked
+                 aria-label="Enable scanning">
           <span class="slider"></span>
         </label>
       </div>
     </div>
- 
+
     <div class="settings-section">
       <div class="settings-label">Display Mode</div>
       <div class="radio-group">
         <label class="radio-row">
           <input type="radio" name="display-mode" value="badge" checked>
           <div>
-            <div>Inline badge</div>
-            <div style="font-size:10px;color:#999">Shows a label directly on each ad</div>
+            <div class="radio-title">Inline badge</div>
+            <div class="radio-sub">Adds a verdict label directly above each ad</div>
           </div>
         </label>
         <label class="radio-row">
           <input type="radio" name="display-mode" value="floating">
           <div>
-            <div>Floating widget</div>
-            <div style="font-size:10px;color:#999">Draggable panel on the page</div>
+            <div class="radio-title">Floating widget</div>
+            <div class="radio-sub">Draggable summary panel on the page</div>
           </div>
         </label>
         <label class="radio-row">
           <input type="radio" name="display-mode" value="sidepanel">
           <div>
-            <div>Side panel</div>
-            <div style="font-size:10px;color:#999">Opens in Chrome's right side panel</div>
+            <div class="radio-title">Side panel</div>
+            <div class="radio-sub">Badges on ads plus Chrome's side panel</div>
           </div>
         </label>
       </div>
+      <div class="settings-status" id="mode-status" role="status"></div>
     </div>
- 
+
     <div class="settings-section">
       <div class="settings-label">Data</div>
       <div class="toggle-row">
         <div>
           <div class="toggle-desc">Clear scan history</div>
-          <div class="toggle-sub">Removes all scanned ad records</div>
+          <div class="toggle-sub">Removes all stored scan records</div>
         </div>
-        <button class="clear-btn" id="clear-btn-settings" style="font-size:11px;color:#e63946;font-weight:600;">Clear</button>
+        <button class="clear-btn" id="clear-btn-settings">Clear</button>
       </div>
-      <div style="font-size:10px;color:#bbb;margin-top:8px;">
-        SEC reference: Philippines OLA Registry (153 platforms)
+      <div class="settings-note" id="ref-note">
+        SEC reference: Philippines OLA Registry
       </div>
     </div>
- 
+
   </div>
- 
+
   <div class="footer">
-    <span>CrediBytes v1.1</span>
+    <span>CrediBytes v1.2</span>
     <span id="scan-count">0 scans</span>
   </div>
- 
+
   <script src="popup.js"></script>
 </body>
 </html>

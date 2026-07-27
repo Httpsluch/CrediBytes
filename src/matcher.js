@@ -95,24 +95,45 @@
   // Used only for unverified results to surface the closest SEC entry by name.
   // Explicitly labeled as a suggestion, never as a verification.
 
+  // Stop-words for fuzzy suggestion only. Beyond corporate suffixes this now
+  // drops generic lending vocabulary, because those words are shared by most
+  // entries in the registry and so carry no identifying signal. Leaving them in
+  // caused both misses and false hits: "Online Cash Loan Fast" used to match an
+  // unrelated registrant purely on the word "cash".
+  const SUGGEST_STOP = new Set([
+    // corporate suffixes / geography
+    "inc", "corp", "corporation", "company", "co", "the", "of", "and",
+    "lending", "finance", "financing", "services", "group", "technologies",
+    "tech", "ph", "philippine", "philippines",
+    // generic product vocabulary
+    "online", "loan", "loans", "app", "apps", "cash", "credit", "money",
+    "pera", "peso", "pesos", "lend", "borrow",
+    // generic marketing adjectives
+    "fast", "quick", "instant", "easy", "mobile",
+  ]);
+
   function tokenize(str) {
-    // Split on whitespace/punctuation; filter out short stop-words
-    const STOP = new Set(["inc", "corp", "lending", "finance", "corporation",
-                           "the", "of", "and", "co", "ph", "philippines"]);
     return str.toLowerCase()
       .replace(/[^a-z0-9\s]/g, " ")
       .split(/\s+/)
-      .filter(t => t.length > 1 && !STOP.has(t));
+      .filter(t => t.length > 1 && !SUGGEST_STOP.has(t));
   }
 
+  // Containment (intersection / smaller set), not Jaccard.
+  //
+  // Jaccard divides by the union, so a short advertiser name is punished for
+  // the registry entry being wordier. "Kviku Philippines" reduces to {kviku};
+  // against {kviku, online, loans} that is 1/3 = 0.33 and fell under the old
+  // 0.40 threshold — the brand name matched exactly and was still discarded.
+  // Containment scores that 1.0. Generic words are removed by SUGGEST_STOP
+  // first, so a match here means the distinctive tokens genuinely coincide.
   function tokenOverlap(a, b) {
     if (!a.length || !b.length) return 0;
     const setA = new Set(a);
     const setB = new Set(b);
     let common = 0;
     for (const t of setA) { if (setB.has(t)) common++; }
-    // Jaccard-style: intersection / union
-    return common / (setA.size + setB.size - common);
+    return common / Math.min(setA.size, setB.size);
   }
 
   function findClosestSecEntry(claimedAppName, claimedCompany) {
@@ -131,8 +152,11 @@
       }
     }
 
-    // Only return a suggestion if overlap meets the 40% threshold
-    return bestScore >= 0.40 ? bestRef : null;
+    // 0.60 on containment. Higher than the old 0.40 because containment scores
+    // more generously; combined with the wider stop-list this raised recall
+    // (Kviku, Cashbee and Tala were all being missed) while removing a false
+    // positive on purely generic advertiser names.
+    return bestScore >= 0.60 ? bestRef : null;
   }
 
   // ── Main matcher ───────────────────────────────────────────────────────────

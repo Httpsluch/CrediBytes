@@ -12,21 +12,57 @@
 
 const BACKEND_URL = 'https://credibytes-backend.onrender.com'
 
-chrome.runtime.onInstalled.addListener(() => {
-  console.log("CrediBytes installed.");
-  chrome.storage.local.set({
-    scans: [],
-    settings: {
-      scanningEnabled: true,
-      displayMode: "badge",
-    }
-  });
+const DEFAULT_SETTINGS = {
+  scanningEnabled: true,
+  displayMode: "badge",
+};
+
+// onInstalled fires on UPDATE as well as first install, so this must not
+// clobber what is already stored — the previous version reset scans to [] and
+// settings to defaults on every version bump, silently wiping the user's
+// history and their chosen display mode.
+chrome.runtime.onInstalled.addListener(async () => {
+  const data = await chrome.storage.local.get(["scans", "settings"]);
+  const patch = {};
+
+  if (!Array.isArray(data.scans)) patch.scans = [];
+  // Merge so a newly added setting gets its default without discarding
+  // existing choices.
+  patch.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
+
+  await chrome.storage.local.set(patch);
 });
 
-chrome.action.onClicked.addListener(async (tab) => {
+// ── Toolbar-click behaviour follows the display mode ────────────────────────
+// With a "default_popup" in the manifest Chrome always opens the popup and
+// never fires action.onClicked, so "Side panel" mode used to be contradictory:
+// the user picked side panel, then clicking the icon gave them the popup
+// anyway. Clearing the popup at runtime lets the click open the panel instead.
+//
+// The 360px popup is also cramped for a long scan list; the panel is
+// full-height, which is why this mode is worth wiring up properly.
+async function applyActionBehaviour(mode) {
+  const useSidePanel = mode === "sidepanel";
+  try {
+    // Empty string disables the popup so the click reaches the side panel.
+    await chrome.action.setPopup({ popup: useSidePanel ? "" : "src/popup.html" });
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: useSidePanel });
+  } catch (_e) {
+    // Older Chrome without setPanelBehavior — keep the popup as the fallback.
+  }
+}
+
+async function syncActionBehaviour() {
   const data = await chrome.storage.local.get("settings");
-  if (data.settings?.displayMode === "sidepanel") {
-    chrome.sidePanel.open({ tabId: tab.id });
+  await applyActionBehaviour(data.settings?.displayMode || "badge");
+}
+
+chrome.runtime.onStartup.addListener(syncActionBehaviour);
+chrome.runtime.onInstalled.addListener(syncActionBehaviour);
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.settings) {
+    applyActionBehaviour(changes.settings.newValue?.displayMode || "badge");
   }
 });
 
@@ -57,12 +93,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-async function fetchPrediction({ companyName, platformName }) {
+async function fetchPrediction({ companyName, platformName, hasOfficialWebsite }) {
   try {
     const res = await fetch(`${BACKEND_URL}/predict`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company_name: companyName, platform_name: platformName }),
+      body: JSON.stringify({
+        company_name: companyName,
+        platform_name: platformName,
+        // Backend defaults this to 0 if absent, so an older content.js still works.
+        has_official_website: hasOfficialWebsite ? 1 : 0,
+      }),
     });
     if (!res.ok) return null;
     return await res.json(); // { is_app: bool, probability: float }

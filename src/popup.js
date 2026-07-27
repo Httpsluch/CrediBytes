@@ -15,10 +15,33 @@
 
 function timeAgo(ts) {
   const secs = Math.floor((Date.now() - ts) / 1000);
-  if (secs < 60)   return `${secs}s ago`;
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-  return `${Math.floor(secs / 3600)}h ago`;
+  if (secs < 5)     return "just now";
+  if (secs < 60)    return `${secs}s ago`;
+  if (secs < 3600)  return `${Math.floor(secs / 60)}m ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+  return `${Math.floor(secs / 86400)}d ago`;
 }
+
+// ── Live-ticking timestamps ────────────────────────────────────────────────────
+// Cost is negligible: this touches only the .scan-time nodes, never re-renders
+// the list, and writes only when the formatted string actually changed. History
+// is capped at 50 records, so a tick is ~50 integer divisions and usually zero
+// DOM writes — far cheaper than the re-render it replaces.
+//
+// The interval is also cleared on unload, which matters for the side panel:
+// unlike the popup it is long-lived and is not torn down on every close.
+
+function refreshTimes() {
+  document.querySelectorAll(".scan-time").forEach(el => {
+    const ts = Number(el.dataset.ts);
+    if (!ts) return;
+    const next = timeAgo(ts);
+    if (el.textContent !== next) el.textContent = next;
+  });
+}
+
+const timeTicker = setInterval(refreshTimes, 1000);
+window.addEventListener("pagehide", () => clearInterval(timeTicker));
 
 function getBadgeClass(scan) {
   if (scan.legitimacy === "legitimate")        return "legitimate";
@@ -74,6 +97,7 @@ function renderScans(scans) {
 
     const time = document.createElement("span");
     time.className = "scan-time";
+    time.dataset.ts = String(scan.ts);   // read back by refreshTimes()
     time.textContent = timeAgo(scan.ts);
 
     top.appendChild(badge);
@@ -132,7 +156,7 @@ function renderScans(scans) {
       } else {
         // Graceful fallback for pre-v1.1 stored scans
         const pct = Math.round((scan.prob || 0) * 100);
-        mlEl.textContent = `Profile score: ${pct}% - ${scan.isApp ? "profile resembles" : "profile does not resemble"} typical SEC-Registered OLA platform`;
+        mlEl.textContent = `Profile score: ${pct}% — ${scan.isApp ? "profile resembles" : "profile does not resemble"} typical SEC-registered OLA platforms.`;
       }
       item.appendChild(mlEl);
     }
@@ -161,9 +185,13 @@ document.getElementById("clear-btn-settings").addEventListener("click", clearSca
 
 document.querySelectorAll(".tab").forEach(tab => {
   tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach(t => {
+      t.classList.remove("active");
+      t.setAttribute("aria-selected", "false");
+    });
     document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
     tab.classList.add("active");
+    tab.setAttribute("aria-selected", "true");
     document.getElementById("panel-" + tab.dataset.tab).classList.add("active");
   });
 });
@@ -189,19 +217,90 @@ document.getElementById("toggle-scanning").addEventListener("change", (e) => {
   });
 });
 
+const MODE_LABELS = {
+  badge:     "Inline badges enabled — reload is not required.",
+  floating:  "Floating widget enabled — look for it on the page.",
+  sidepanel: "Side panel enabled — badges also stay on ads.",
+};
+
+function flashStatus(text) {
+  const el = document.getElementById("mode-status");
+  if (!el) return;
+  el.textContent = text;
+  el.classList.add("show");
+  clearTimeout(flashStatus._t);
+  flashStatus._t = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
 document.querySelectorAll("input[name='display-mode']").forEach(radio => {
   radio.addEventListener("change", () => {
     chrome.storage.local.get("settings", (data) => {
       const s = data.settings || {};
       s.displayMode = radio.value;
-      chrome.storage.local.set({ settings: s });
 
-      if (radio.value === "sidepanel") {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-          if (tabs[0]) chrome.sidePanel.open({ tabId: tabs[0].id });
-        });
+      // content.js has a storage.onChanged listener, so writing here is what
+      // actually switches the on-page surface. It used to only persist the
+      // value, which is why every mode except side panel looked broken —
+      // side panel appeared to work solely because of the open() call below.
+      chrome.storage.local.set({ settings: s }, () => {
+        flashStatus(MODE_LABELS[radio.value] || "Display mode updated.");
+      });
+
+      // Dismiss the popup after a choice is made. Every mode's result is on
+      // the page or in the panel — leaving a 360px card covering the feed just
+      // hides the thing the user is trying to look at. Short delay so the
+      // confirmation line is readable first.
+      //
+      // Guarded: when this page IS the side panel, closing would shut the panel
+      // the user just selected.
+      if (!runningAsSidePanel) {
+        setTimeout(() => window.close(), radio.value === "sidepanel" ? 250 : 900);
       }
+
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = tabs[0];
+        if (!tab) return;
+
+        if (radio.value === "sidepanel") {
+          // Re-enable first: switching away disables the panel for this tab,
+          // and open() on a disabled panel throws.
+          chrome.sidePanel
+            .setOptions({ tabId: tab.id, path: "src/popup.html", enabled: true })
+            .catch(() => {});
+          // Must stay in the user-gesture call stack, so this is not nested
+          // inside the storage callback above.
+          chrome.sidePanel.open({ tabId: tab.id });
+        } else {
+          // Leaving side-panel mode should also dismiss the panel, otherwise
+          // it stays open and contradicts the setting.
+          chrome.sidePanel
+            .setOptions({ tabId: tab.id, enabled: false })
+            .catch(() => {});
+        }
+      });
     });
+  });
+});
+
+// ── Open in side panel ─────────────────────────────────────────────────────────
+// popup.html is used for BOTH the popup and the side panel. When it is already
+// the panel there is nothing to expand into, so hide the control. The panel is
+// the wider of the two, so width is a reliable discriminator (the popup is
+// pinned to 360px).
+
+// panel-init.js already set the class from ?panel=1. Width is not usable here:
+// the side panel is resizable and often narrower than the popup.
+const runningAsSidePanel =
+  document.documentElement.classList.contains("is-sidepanel");
+
+document.getElementById("expand-btn")?.addEventListener("click", () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0]) return;
+    chrome.sidePanel
+      .setOptions({ tabId: tabs[0].id, path: "src/popup.html", enabled: true })
+      .catch(() => {});
+    chrome.sidePanel.open({ tabId: tabs[0].id });
+    window.close();   // popup and panel side by side would be redundant
   });
 });
 

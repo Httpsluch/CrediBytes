@@ -1,169 +1,284 @@
+/* CrediBytes popup / side panel
+   One stylesheet serves both surfaces: the popup is a fixed 360px column,
+   the side panel is fluid and full-height (see the media query at the end). */
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-html,body {
-    height: 100%;
-}
-body {
-    width: 360px; min-height: 200px;
-    font-family: system-ui, -apple-system, sans-serif;
-    background: #f0f2f5; color: #1a1a2e;
-    display: flex;
-    flex-direction: column;
+:root {
+    --bg:        #f4f5f8;
+    --surface:   #ffffff;
+    --surface-2: #fafbfc;
+    --border:    #e4e6ec;
+    --text:      #1b1d26;
+    --text-2:    #5f6472;
+    --text-3:    #9498a6;
+
+    --brand-ink: #171a2b;
+    --accent:    #e63946;
+
+    --green:  #1a9c5b;
+    --amber:  #c58a12;
+    --orange: #d1641c;
+    --red:    #cc2f38;
+
+    --green-bg:  #e7f6ec;
+    --amber-bg:  #fdf5e3;
+    --orange-bg: #fdeee2;
+    --red-bg:    #fdeaec;
+
+    --radius: 10px;
+    --shadow: 0 1px 2px rgba(16,19,34,.06);
 }
 
-/* Header */
+/* The viewer's OS theme drives the palette; the panel is often open for long
+   stretches next to a dark Facebook, and a white slab beside it is harsh. */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg:        #0e1018;
+        --surface:   #171a24;
+        --surface-2: #1c202c;
+        --border:    #282d3b;
+        --text:      #e9ebf2;
+        --text-2:    #9ea4b8;
+        --text-3:    #6d7387;
+        --brand-ink: #10131d;
+
+        --green-bg:  #10301f;
+        --amber-bg:  #322709;
+        --orange-bg: #35200f;
+        --red-bg:    #351319;
+
+        --shadow: 0 1px 2px rgba(0,0,0,.4);
+    }
+}
+
+/* A Chrome popup has no viewport height of its own — it sizes to content, up
+   to 600px. `height:100%` therefore resolved against nothing, so `.feed`'s
+   `flex:1` had no space to claim and collapsed to a sliver. An explicit height
+   gives the flex column something definite to divide up. */
+body {
+    width: 360px; height: 560px;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column;
+    font-size: 13px; line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
 .header {
-    background: #1a1a2e; color: #fff;
-    padding: 12px 14px; display: flex; align-items: center; gap: 10px;
+    background: var(--brand-ink); color: #fff;
+    padding: 13px 15px; display: flex; align-items: center; gap: 11px;
     flex-shrink: 0;
 }
 .header-logo {
-    width: 26px; height: 26px; background: #e63946;
-    border-radius: 6px; display: flex; align-items: center;
+    width: 30px; height: 30px; background: var(--accent);
+    border-radius: 9px; display: flex; align-items: center;
     justify-content: center; font-size: 15px; flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(230,57,70,.35);
 }
-.header-text h1 { font-size: 14px; font-weight: 700; }
-.header-text p  { font-size: 10px; opacity: 0.55; margin-top: 1px; }
+.header-text { flex: 1; min-width: 0; }
+.header-text h1 { font-size: 14px; font-weight: 700; letter-spacing: .2px; }
+.header-text p  { font-size: 10.5px; opacity: .6; margin-top: 1px; }
 
-/* Tabs */
+.expand-btn {
+    background: rgba(255,255,255,.1); border: none; color: #fff;
+    width: 26px; height: 26px; border-radius: 7px; cursor: pointer;
+    font-size: 13px; line-height: 1; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .12s;
+}
+.expand-btn:hover { background: rgba(255,255,255,.2); }
+.expand-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Pointless once we ARE the side panel. */
+.is-sidepanel .expand-btn { display: none; }
+
+/* ── Tabs ───────────────────────────────────────────────────────────────── */
+
 .tabs {
-    display: flex; background: #fff;
-    border-bottom: 2px solid #e0e0e0;
-    flex-shrink: 0;
+    display: flex; background: var(--surface);
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
 .tab {
-    flex: 1; padding: 9px 0; font-size: 12px; font-weight: 600;
-    text-align: center; cursor: pointer; color: #888;
-    border-bottom: 2px solid transparent; margin-bottom: -2px;
-    transition: color .15s;
+    flex: 1; padding: 10px 0; font-size: 12px; font-weight: 600;
+    text-align: center; cursor: pointer; color: var(--text-3);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color .15s, border-color .15s;
+    background: none; border-top: none; border-left: none; border-right: none;
+    font-family: inherit;
 }
-.tab.active { color: #1a1a2e; border-bottom-color: #e63946; }
+.tab:hover { color: var(--text-2); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-/* Panels */
-.panel { display: none; flex: 1; flex-direction: column; min-height: 0;}
+/* ── Panels ─────────────────────────────────────────────────────────────── */
+
+.panel { display: none; flex: 1; flex-direction: column; min-height: 0; }
 .panel.active { display: flex; }
 
-/* Stats */
+/* ── Stats ──────────────────────────────────────────────────────────────── */
+
 .stats {
-    display: flex; background: #fff;
-    border-bottom: 1px solid #e0e0e0;
+    display: flex; gap: 7px; padding: 11px 11px 4px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
     flex-shrink: 0;
 }
-.stat { flex: 1; text-align: center; padding: 10px 4px; border-right: 1px solid #e0e0e0; }
-.stat:last-child { border-right: none; }
-.stat-num { font-size: 20px; font-weight: 700; line-height: 1; }
-.stat-num.green  { color: #2e7d32; }
-.stat-num.orange { color: #e65100; }
-.stat-num.red    { color: #b71c1c; }
-.stat-label { font-size: 10px; color: #666; margin-top: 2px; text-transform: uppercase; letter-spacing:.4px; }
+.stat {
+    flex: 1; text-align: center; padding: 9px 4px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.stat-num { font-size: 19px; font-weight: 700; line-height: 1.1; }
+.stat-num.green  { color: var(--green); }
+.stat-num.orange { color: var(--orange); }
+.stat-num.red    { color: var(--red); }
+.stat-label {
+    font-size: 9.5px; color: var(--text-3); margin-top: 3px;
+    text-transform: uppercase; letter-spacing: .5px; font-weight: 600;
+}
 
-/* Feed header */
+/* ── Feed ───────────────────────────────────────────────────────────────── */
+
 .feed-header {
-    padding: 8px 12px 5px; font-size: 11px; font-weight: 600;
-    color: #666; text-transform: uppercase; letter-spacing: .5px;
+    padding: 11px 13px 6px; font-size: 10.5px; font-weight: 700;
+    color: var(--text-3); text-transform: uppercase; letter-spacing: .6px;
     display: flex; align-items: center; justify-content: space-between;
     flex-shrink: 0;
 }
 .clear-btn {
-    font-size: 10px; color: #aaa; background: none;
-    border: none; cursor: pointer; padding: 2px 4px;
+    font-size: 11px; color: var(--text-3); background: none;
+    border: none; cursor: pointer; padding: 3px 7px; border-radius: 6px;
+    font-family: inherit; font-weight: 600; text-transform: none;
+    letter-spacing: 0; transition: color .12s, background .12s;
 }
-.clear-btn:hover { color: #e63946; }
+.clear-btn:hover { color: var(--accent); background: var(--red-bg); }
+.clear-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-/* Scan list */
-.feed {
-    flex: 1;
-    max-height: 260px;
-    overflow-y: auto;
-    padding: 0 8px 8px;
-}
+/* min-height:0 is required: a flex item defaults to min-height:auto, which
+   refuses to shrink below its content and makes overflow-y never engage. */
+.feed { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 10px 10px; }
+
 .scan-item {
-    background: #fff; border-radius: 8px; padding: 9px 11px;
-    margin-bottom: 5px; border-left: 3px solid #ccc; font-size: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-left: 3px solid var(--text-3);
+    border-radius: var(--radius); padding: 10px 12px;
+    margin-bottom: 6px; box-shadow: var(--shadow);
 }
-.scan-item.legitimate  { border-color: #2e7d32; }
-.scan-item.likely      { border-color: #f9a825; }
-.scan-item.unverified  { border-color: #e65100; }
-.scan-item.danger      { border-color: #b71c1c; background: #fff5f5; }
+.scan-item.legitimate { border-left-color: var(--green); }
+.scan-item.likely     { border-left-color: var(--amber); }
+.scan-item.unverified { border-left-color: var(--orange); }
+.scan-item.danger     { border-left-color: var(--red); }
 
-.scan-top { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; }
+.scan-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .scan-badge {
-    font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+    font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .3px; white-space: nowrap;
 }
-.scan-badge.legitimate { background: #e6f4ea; color: #1b5e20; }
-.scan-badge.likely     { background: #fff8e1; color: #6d4c00; }
-.scan-badge.unverified { background: #fff3e0; color: #bf360c; }
-.scan-badge.danger     { background: #fce4ec; color: #7f0000; }
+.scan-badge.legitimate { background: var(--green-bg);  color: var(--green); }
+.scan-badge.likely     { background: var(--amber-bg);  color: var(--amber); }
+.scan-badge.unverified { background: var(--orange-bg); color: var(--orange); }
+.scan-badge.danger     { background: var(--red-bg);    color: var(--red); }
 
-.scan-time { font-size: 10px; color: #bbb; margin-left: auto; }
+.scan-time { font-size: 10px; color: var(--text-3); margin-left: auto; flex-shrink: 0; }
 .scan-name {
-    font-weight: 600; color: #222; font-size: 12px;
+    font-weight: 600; color: var(--text); font-size: 12.5px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    margin-bottom: 1px;
+    margin-bottom: 2px;
 }
-.scan-reason { font-size: 11px; color: #666; line-height: 1.4; }
-.scan-meta   { font-size: 10px; color: #999; margin-top: 2px; }
+.scan-reason { font-size: 11.5px; color: var(--text-2); line-height: 1.45; }
+.scan-meta   { font-size: 10.5px; color: var(--text-3); margin-top: 3px; word-break: break-word; }
+.scan-suggestion { color: var(--orange); font-style: italic; }
 
-/* Empty */
-.empty { text-align: center; padding: 28px 16px; color: #bbb; }
-.empty-icon  { font-size: 28px; margin-bottom: 8px; }
-.empty-title { font-size: 13px; font-weight: 600; color: #666; margin-bottom: 4px; }
-.empty-sub   { font-size: 11px; line-height: 1.5; }
+/* ── Empty state ────────────────────────────────────────────────────────── */
 
-/* Settings panel */
-.settings-section { padding: 12px 14px; }
-.settings-section + .settings-section { border-top: 1px solid #e0e0e0; }
+.empty { text-align: center; padding: 36px 20px; color: var(--text-3); }
+.empty-icon  { font-size: 30px; margin-bottom: 10px; opacity: .55; }
+.empty-title { font-size: 13px; font-weight: 600; color: var(--text-2); margin-bottom: 5px; }
+.empty-sub   { font-size: 11.5px; line-height: 1.55; }
+
+/* ── Settings ───────────────────────────────────────────────────────────── */
+
+#panel-settings { overflow-y: auto; }
+.settings-section { padding: 13px 15px; }
+.settings-section + .settings-section { border-top: 1px solid var(--border); }
 .settings-label {
-    font-size: 11px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .5px; color: #888; margin-bottom: 8px;
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .6px; color: var(--text-3); margin-bottom: 9px;
 }
 
-/* Toggle switch */
 .toggle-row {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 6px 0;
+    gap: 12px; padding: 5px 0;
 }
-.toggle-desc { font-size: 12px; color: #333; }
-.toggle-sub  { font-size: 10px; color: #999; margin-top: 1px; }
-.switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+.toggle-desc { font-size: 12.5px; color: var(--text); font-weight: 500; }
+.toggle-sub  { font-size: 10.5px; color: var(--text-3); margin-top: 2px; }
+
+.switch { position: relative; width: 38px; height: 21px; flex-shrink: 0; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .slider {
-    position: absolute; inset: 0; background: #ccc;
-    border-radius: 20px; cursor: pointer; transition: .2s;
+    position: absolute; inset: 0; background: var(--border);
+    border-radius: 999px; cursor: pointer; transition: background .2s;
 }
 .slider:before {
     content: ""; position: absolute;
-    width: 14px; height: 14px; left: 3px; top: 3px;
-    background: #fff; border-radius: 50%; transition: .2s;
+    width: 15px; height: 15px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: transform .2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.3);
 }
-input:checked + .slider { background: #2e7d32; }
-input:checked + .slider:before { transform: translateX(16px); }
+input:checked + .slider { background: var(--green); }
+input:checked + .slider:before { transform: translateX(17px); }
+.switch input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Radio buttons for display mode */
-.radio-group { display: flex; flex-direction: column; gap: 6px; }
+/* Display-mode options — full-width cards so the whole row is a hit target,
+   not just the 13px radio dot. */
+.radio-group { display: flex; flex-direction: column; gap: 7px; }
 .radio-row {
-    display: flex; align-items: center; gap: 8px;
-    font-size: 12px; color: #333; cursor: pointer; padding: 4px 0;
+    display: flex; align-items: flex-start; gap: 10px;
+    font-size: 12.5px; color: var(--text); cursor: pointer;
+    padding: 10px 11px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: var(--surface);
+    transition: border-color .15s, background .15s;
 }
-.radio-row input[type="radio"] { accent-color: #e63946; }
+.radio-row:hover { border-color: var(--text-3); }
+.radio-row input[type="radio"] { accent-color: var(--accent); margin-top: 1px; flex-shrink: 0; }
+.radio-row:has(input:checked) { border-color: var(--accent); background: var(--surface-2); }
+.radio-row:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.radio-title { font-weight: 600; }
+.radio-sub { font-size: 10.5px; color: var(--text-3); margin-top: 2px; line-height: 1.4; }
 
-/* Footer */
+.settings-note { font-size: 10.5px; color: var(--text-3); margin-top: 10px; line-height: 1.5; }
+
+/* Small inline confirmation after a setting is applied. */
+.settings-status {
+    font-size: 11px; color: var(--green); margin-top: 9px;
+    opacity: 0; transition: opacity .2s;
+}
+.settings-status.show { opacity: 1; }
+
+/* ── Footer ─────────────────────────────────────────────────────────────── */
+
 .footer {
-    border-top: 1px solid #e0e0e0; padding: 7px 12px;
-    font-size: 10px; color: #bbb;
-    display: flex; justify-content: space-between;
-    background: #fff;
-    flex-shrink: 0;
+    border-top: 1px solid var(--border); padding: 8px 13px;
+    font-size: 10.5px; color: var(--text-3);
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--surface); flex-shrink: 0;
 }
 
-/* Side panel */
-@media (min-width: 400px){
-    body{
-        width: 100%;
-        height: 100vh;
-        min-height: 100vh;
-    }
-    .feed{
-        max-height: none;
-    }
+/* ── Side panel ─────────────────────────────────────────────────────────── */
+/* Chrome's side panel is wider than the 360px popup and fills the window
+   height. Without this the body stayed 360px wide and the feed was capped,
+   leaving a dead grey band down the right side. */
+/* Class-based, not width-based: the panel is resizable and is often NARROWER
+   than the 360px popup, so any min-width breakpoint misfires. panel-init.js
+   sets this from the ?panel=1 query parameter the manifest points at. */
+.is-sidepanel, .is-sidepanel body {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+}
+.is-sidepanel .feed { max-height: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
 }
