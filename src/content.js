@@ -315,6 +315,15 @@
   // (the previous behaviour — backend hardcoded 0) left the model operating in
   // a regime it was never trained on.
   function requestStage1Prediction(advertiserName, appName, hasOfficialWebsite) {
+    // Local first. The bundled model is the same LightGBM ensemble the backend
+    // serves — identical to floating-point precision — so this is not a
+    // degraded mode. It just skips a network round trip that, on Render's free
+    // tier, can be a 30-60s cold start.
+    const local = window.CrediBytesStage1?.predict(
+      advertiserName, appName, hasOfficialWebsite);
+    if (local) return Promise.resolve(local);
+
+    // Only reached if stage1_model.js failed to load.
     return new Promise((resolve) => {
       safeSendMessage(
         {
@@ -325,8 +334,8 @@
             hasOfficialWebsite: hasOfficialWebsite ? 1 : 0,
           },
         },
-        // null covers a dead context, an unreachable backend, and a Render
-        // cold start alike; the badge simply renders without the ML line.
+        // null covers a dead context, an unreachable backend, and a cold start
+        // alike; the badge simply renders without the profile line.
         (response) => resolve(response?.prediction ?? null)
       );
     });

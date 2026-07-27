@@ -66,6 +66,43 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+// ── Keeping the fallback backend warm ───────────────────────────────────────
+// Stage 1 normally runs locally (see stage1.js), so the backend is only the
+// fallback. But Render's free tier spins down after ~15 minutes idle, and a
+// cold start costs 30-60s — the fallback would be useless exactly when needed.
+//
+// A cheap GET on the health endpoint when the user lands on Facebook wakes it
+// in the background, so it is usually ready before any ad is scanned. Rate
+// limited to at most one wake per WARM_INTERVAL_MS, and only for Facebook tabs,
+// so this is not a keep-alive ping loop — it warms on genuine intent to use.
+
+const WARM_INTERVAL_MS = 10 * 60 * 1000;
+let lastWarmAt = 0;
+
+async function warmBackend() {
+  const now = Date.now();
+  if (now - lastWarmAt < WARM_INTERVAL_MS) return;
+  lastWarmAt = now;
+  try {
+    await fetch(`${BACKEND_URL}/`, { method: "GET", cache: "no-store" });
+  } catch (_e) {
+    // Offline or still spinning up — the local model covers Stage 1 anyway.
+  }
+}
+
+const isFacebook = (url) => typeof url === "string" && /^https:\/\/(www\.)?facebook\.com\//.test(url);
+
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (changeInfo.status === "loading" && isFacebook(tab.url)) warmBackend();
+});
+
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (isFacebook(tab.url)) warmBackend();
+  } catch (_e) { /* tab vanished */ }
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // ── Stage 1: ML prediction via FastAPI backend ──────────────────────────
@@ -93,21 +130,49 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-async function fetchPrediction({ companyName, platformName, hasOfficialWebsite }) {
+// Reached only when the bundled Stage 1 model failed to load, so it is worth
+// waiting through a cold start rather than giving up immediately.
+//
+// A first attempt on a spun-down free-tier instance usually times out while
+// the container boots; the retry then lands on a warm instance. The old code
+// made a single attempt and returned null on any failure, which is why a cold
+// start was indistinguishable from a broken backend.
+const FIRST_TRY_TIMEOUT_MS = 8000;
+const RETRY_TIMEOUT_MS     = 45000;   // Render cold starts can run 30-60s
+
+async function postPredict(payload, timeoutMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(`${BACKEND_URL}/predict`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        company_name: companyName,
-        platform_name: platformName,
+        company_name: payload.companyName,
+        platform_name: payload.platformName,
         // Backend defaults this to 0 if absent, so an older content.js still works.
-        has_official_website: hasOfficialWebsite ? 1 : 0,
+        has_official_website: payload.hasOfficialWebsite ? 1 : 0,
       }),
+      signal: ctrl.signal,
     });
     if (!res.ok) return null;
-    return await res.json(); // { is_app: bool, probability: float }
-  } catch {
-    return null; // Backend unreachable — content.js degrades gracefully
+    const json = await res.json();
+    return { ...json, source: "remote" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchPrediction(payload) {
+  try {
+    return await postPredict(payload, FIRST_TRY_TIMEOUT_MS);
+  } catch (_first) {
+    // Likely a cold start. Nudge the instance and wait longer for one retry.
+    warmBackend();
+    try {
+      return await postPredict(payload, RETRY_TIMEOUT_MS);
+    } catch (_second) {
+      return null;   // content.js renders the badge without the profile line
+    }
   }
 }
