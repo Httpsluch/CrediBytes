@@ -81,6 +81,10 @@ window.chrome = {
     onChanged: { addListener(fn) { window.__listeners.push(fn); } },
   },
   runtime: {
+    // Real content scripts always have this. content.js treats a missing
+    // runtime.id as "extension context invalidated", so the shim must provide
+    // one or every suite would think it had been orphaned.
+    id: "credibytes-test-extension-id",
     lastError: null,
     sendMessage(msg, cb) {
       window.__sent.push(msg);

@@ -31,6 +31,73 @@
     displayMode: "badge",
   };
 
+  // ── Extension-context guards ────────────────────────────────────────────────
+  // Reloading, updating, or disabling the extension orphans the content scripts
+  // already injected into open tabs. Their `chrome` object is torn down, so
+  // `chrome.runtime` reads back as undefined and every call throws
+  // "Cannot read properties of undefined (reading 'sendMessage')".
+  //
+  // The page keeps running, and the MutationObserver keeps firing, so an
+  // unguarded call throws once per detected ad and floods the console. These
+  // wrappers fail quietly instead and shut the observer down on first detection.
+
+  let contextDead = false;
+
+  function extensionAlive() {
+    if (contextDead) return false;
+    try {
+      // chrome.runtime.id is undefined precisely when the context is invalid.
+      return typeof chrome !== "undefined" && !!chrome.runtime && !!chrome.runtime.id;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function markContextDead() {
+    if (contextDead) return;
+    contextDead = true;
+    try { observer?.disconnect(); } catch (_err) { /* nothing to do */ }
+    clearTimeout(debounceTimer);
+  }
+
+  function safeSendMessage(message, cb) {
+    if (!extensionAlive()) { markContextDead(); cb && cb(null); return; }
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          void chrome.runtime.lastError;   // read it so Chrome stops warning
+          cb && cb(null);
+          return;
+        }
+        cb && cb(response);
+      });
+    } catch (_err) {
+      markContextDead();
+      cb && cb(null);
+    }
+  }
+
+  function safeStorageGet(keys, cb) {
+    if (!extensionAlive()) { markContextDead(); return; }
+    try {
+      chrome.storage.local.get(keys, (data) => {
+        if (chrome.runtime.lastError) { void chrome.runtime.lastError; return; }
+        cb(data || {});
+      });
+    } catch (_err) {
+      markContextDead();
+    }
+  }
+
+  function safeStorageSet(obj) {
+    if (!extensionAlive()) { markContextDead(); return; }
+    try {
+      chrome.storage.local.set(obj, () => void chrome.runtime.lastError);
+    } catch (_err) {
+      markContextDead();
+    }
+  }
+
   // ── OLA keyword detection ───────────────────────────────────────────────────
   // Single unified list — advertiserName is now also checked, so the
   // strong/secondary split is no longer needed. Any keyword hit anywhere
@@ -249,28 +316,19 @@
   // a regime it was never trained on.
   function requestStage1Prediction(advertiserName, appName, hasOfficialWebsite) {
     return new Promise((resolve) => {
-      try {
-        chrome.runtime.sendMessage(
-          {
-            type: "PREDICT",
-            payload: {
-              companyName: advertiserName,
-              platformName: appName,
-              hasOfficialWebsite: hasOfficialWebsite ? 1 : 0,
-            },
+      safeSendMessage(
+        {
+          type: "PREDICT",
+          payload: {
+            companyName: advertiserName,
+            platformName: appName,
+            hasOfficialWebsite: hasOfficialWebsite ? 1 : 0,
           },
-          (response) => {
-            if (chrome.runtime.lastError) {
-              void chrome.runtime.lastError;
-              resolve(null);
-              return;
-            }
-            resolve(response?.prediction ?? null);
-          }
-        );
-      } catch (_err) {
-        resolve(null);
-      }
+        },
+        // null covers a dead context, an unreachable backend, and a Render
+        // cold start alike; the badge simply renders without the ML line.
+        (response) => resolve(response?.prediction ?? null)
+      );
     });
   }
 
@@ -438,7 +496,7 @@
     closeBtn.setAttribute("aria-label", "Close CrediBytes panel");
     closeBtn.addEventListener("click", () => {
       widget.style.display = "none";
-      chrome.storage.local.set({ floatingOpen: false });
+      safeStorageSet({ floatingOpen: false });
     });
 
     header.appendChild(title);
@@ -480,7 +538,7 @@
     const content = document.getElementById("cb-float-content");
     if (!content) return;
 
-    chrome.storage.local.get("scans", (data) => {
+    safeStorageGet("scans", (data) => {
       const all   = data.scans || [];
       const scans = all.slice(0, 6);
 
@@ -702,7 +760,7 @@
     const { legitimacy, reason, ref, status, suggestion } = matchResult;
     const store = window.CrediBytesMatcher.isStoreUrl(landingUrl);
 
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: "SAVE_SCAN",
       payload: {
         ts: Date.now(),
@@ -727,6 +785,9 @@
   }
 
   function scanPage() {
+    // Bail before touching the DOM if the extension was reloaded — otherwise
+    // every observed ad would attempt a doomed chrome.* call.
+    if (!extensionAlive()) { markContextDead(); return; }
     if (!settings.scanningEnabled) return;
     findAdElements().forEach(el => processAd(el));
   }
@@ -775,6 +836,9 @@
 
   // ── Debounced MutationObserver ───────────────────────────────────────────────
 
+  // Module-scoped so markContextDead() can shut them down. Declared with `let`
+  // (not `const` inside init) precisely because that guard has to reach them.
+  let observer = null;
   let debounceTimer;
   function debouncedScan() {
     clearTimeout(debounceTimer);
@@ -786,7 +850,7 @@
   function init() {
     injectBadgeStyles();
 
-    chrome.storage.local.get(["settings", "floatingOpen"], (data) => {
+    safeStorageGet(["settings", "floatingOpen"], (data) => {
       settings.scanningEnabled = data.settings?.scanningEnabled !== false;
       settings.displayMode     = data.settings?.displayMode || "badge";
 
@@ -831,7 +895,7 @@
       }
     });
 
-    const observer = new MutationObserver((mutations) => {
+    observer = new MutationObserver((mutations) => {
       if (mutations.some(m => m.addedNodes.length > 0)) debouncedScan();
     });
     observer.observe(document.body, { childList: true, subtree: true });
