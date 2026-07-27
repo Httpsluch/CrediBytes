@@ -217,6 +217,12 @@ document.getElementById("toggle-scanning").addEventListener("change", (e) => {
   });
 });
 
+// Must carry ?panel=1 — panel-init.js keys the side-panel layout off it, and a
+// setOptions() call without the query string overrides the manifest's
+// default_path, loading the panel with popup sizing and leaving dead space
+// below the footer.
+const PANEL_PATH = "src/popup.html?panel=1";
+
 const MODE_LABELS = {
   badge:     "Inline badges enabled — reload is not required.",
   floating:  "Floating widget enabled — look for it on the page.",
@@ -265,7 +271,7 @@ document.querySelectorAll("input[name='display-mode']").forEach(radio => {
           // Re-enable first: switching away disables the panel for this tab,
           // and open() on a disabled panel throws.
           chrome.sidePanel
-            .setOptions({ tabId: tab.id, path: "src/popup.html", enabled: true })
+            .setOptions({ tabId: tab.id, path: PANEL_PATH, enabled: true })
             .catch(() => {});
           // Must stay in the user-gesture call stack, so this is not nested
           // inside the storage callback above.
@@ -290,6 +296,19 @@ document.querySelectorAll("input[name='display-mode']").forEach(radio => {
 
 // panel-init.js already set the class from ?panel=1. Width is not usable here:
 // the side panel is resizable and often narrower than the popup.
+// Safety net for a panel opened without ?panel=1 — Chrome persists sidePanel
+// options per tab, so a path stored by an older build can outlive the fix.
+// Secondary to the query parameter, never primary: the popup is capped at
+// 600px tall (body is 560), so a viewport meaningfully taller than that can
+// only be the panel.
+function ensurePanelClassFallback() {
+  const html = document.documentElement;
+  if (html.classList.contains("is-sidepanel")) return;
+  if (window.innerHeight > 620) html.classList.add("is-sidepanel");
+}
+ensurePanelClassFallback();
+window.addEventListener("resize", ensurePanelClassFallback);
+
 const runningAsSidePanel =
   document.documentElement.classList.contains("is-sidepanel");
 
@@ -297,7 +316,7 @@ document.getElementById("expand-btn")?.addEventListener("click", () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs[0]) return;
     chrome.sidePanel
-      .setOptions({ tabId: tabs[0].id, path: "src/popup.html", enabled: true })
+      .setOptions({ tabId: tabs[0].id, path: PANEL_PATH, enabled: true })
       .catch(() => {});
     chrome.sidePanel.open({ tabId: tabs[0].id });
     window.close();   // popup and panel side by side would be redundant
