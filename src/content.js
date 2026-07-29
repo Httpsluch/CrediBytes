@@ -411,6 +411,31 @@
     return 2;
   }
 
+  // The Meta Ad Library preview carries no outbound anchor — its call to action
+  // is an internal "See details" control, and the destination appears only as a
+  // caption above the headline (WWW.ACOM.COM.PH). Without this, every Ad Library
+  // ad is judged on the advertiser's Facebook page link, which is why ACOM ads
+  // pointing at a domain the SEC has on record came back "Name Match Only".
+  //
+  // Only an element whose ENTIRE text is a bare domain counts. Scanning ad copy
+  // for domain-shaped strings would be trivially spoofable — an impersonator
+  // could write "acom.com.ph" in the body while linking elsewhere. Meta renders
+  // this caption from the ad's real destination, so it is evidence; free text in
+  // the body is not.
+  const BARE_DOMAIN = /^(?:www\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9-]+)*\.[a-z]{2,}$/i;
+
+  function captionDomains(adEl) {
+    const found = [];
+    for (const el of adEl.querySelectorAll("div, span, a")) {
+      if (el.children.length) continue;                 // leaf nodes only
+      const t = (el.textContent || "").trim();
+      if (t.length < 4 || t.length > 60 || /\s/.test(t)) continue;
+      if (!BARE_DOMAIN.test(t)) continue;
+      found.push("https://" + t.replace(/^www\./i, "").toLowerCase());
+    }
+    return found;
+  }
+
   function extractAdData(adEl) {
     // Facebook stores an ad's true destination in data-lynx-uri, leaving href
     // as an internal redirect. Reading only href meant an ACOM ad pointing at
@@ -436,8 +461,21 @@
       .map((href, i) => ({ href, rank: rankLink(href), i }))
       .sort((a, b) => a.rank - b.rank || a.i - b.i);
 
+    // Fall back to the displayed destination only when no real outbound link
+    // exists — a resolved href always outranks a rendered caption.
+    let landingUrl = ranked[0]?.href || "";
+    let fromCaption = false;
+    if (!landingUrl || rankLink(landingUrl) === 2) {
+      const caption = captionDomains(adEl).find(u => rankLink(u) !== 2);
+      if (caption) {
+        landingUrl = caption;
+        fromCaption = true;
+      }
+    }
+
     return {
-      landingUrl:     ranked[0]?.href || "",
+      landingUrl,
+      destinationFromCaption: fromCaption,
       adText:         adEl.innerText || "",
       claimedAppName: getAppName(adEl),
       advertiserName: getAdvertiserName(adEl, adMarkers.get(adEl)),
@@ -532,6 +570,8 @@
     const { legitimacy, reason, ref, status, suggestion } = matchResult;
     const store      = window.CrediBytesMatcher.isStoreUrl(matchResult._adUrl || "");
     const claimedAppName = matchResult._claimedAppName || "";
+    const fromCaption    = !!matchResult._fromCaption;
+    const landingHost    = window.CrediBytesMatcher.normHost(matchResult._adUrl || "");
     const riskDesc   = stage1Result?.risk_desc   ?? null;
     const isApp      = stage1Result?.is_app      ?? null;
     const prob       = stage1Result?.probability ?? null;
@@ -629,6 +669,15 @@
                  "but the advertisement offers loans. Utilities are not required " +
                  "to register with the SEC, so treat the absence of a declaration " +
                  "here as a mismatch to check rather than proof of wrongdoing.");
+    }
+
+    // Provenance matters: this verdict rests on the destination the ad displays
+    // rather than a link we resolved. Meta renders that caption from the real
+    // target, but the distinction should be visible rather than implied.
+    if (fromCaption && landingHost) {
+      addSection("Destination");
+      addRow("", `Read from the ad's displayed link (${landingHost}); this preview ` +
+                 `exposes no clickable destination.`);
     }
 
     if (riskDesc) {
@@ -928,7 +977,8 @@
   async function processAd(adEl) {
     adEl.setAttribute(PROCESSED, "1");
 
-    const { landingUrl, adText, claimedAppName, advertiserName } = extractAdData(adEl);
+    const { landingUrl, adText, claimedAppName, advertiserName,
+            destinationFromCaption } = extractAdData(adEl);
     if (!isOLAAd(adText, landingUrl, advertiserName, claimedAppName)) return;
 
     const matchResult = window.CrediBytesMatcher.matchUrl(
@@ -936,6 +986,7 @@
     );
     matchResult._adUrl = landingUrl;
     matchResult._claimedAppName = claimedAppName;
+    matchResult._fromCaption = destinationFromCaption;
 
     // Only a confirmed SEC match counts. matchResult.suggestion is a fuzzy
     // guess and must not be treated as a verified website.
