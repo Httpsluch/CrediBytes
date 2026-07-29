@@ -1,12 +1,15 @@
 /**
- * Stage 1 runs locally from the bundled model, so a Render cold start can no
- * longer strip the profile score off the badge.
+ * The bundled Stage 1 model — the safety net behind the backend.
  *
- * Numerical equivalence with the served model is asserted separately and more
- * strictly by CrediBytes-Backend/verify_export.py, which diffs against
- * LightGBM itself. This suite covers the wiring: that the local path is used,
- * that it needs no network, and that the backend is still there if the model
- * fails to load.
+ * The backend is preferred (see backend-precedence.test.mjs) so the deployed
+ * service receives real traffic. This suite covers the model itself: that it
+ * loads, predicts deterministically, returns the backend's response shape, and
+ * takes over whenever the backend does not answer — so a Render cold start can
+ * never strip the profile score off a badge.
+ *
+ * Numerical equivalence with the served model is asserted separately and far
+ * more strictly by CrediBytes-Backend/verify_export.py, which diffs against
+ * LightGBM itself.
  */
 import { chromium, SRC, read, createReporter } from "./_setup.mjs";
 
@@ -93,7 +96,9 @@ const browser = await chromium.launch({ headless: true });
   await page.addScriptTag({ content: await read("matcher.js") });
   await page.addScriptTag({ content: await read("stage1.js") });
   await page.addScriptTag({ content: await read("content.js") });
-  await page.waitForTimeout(900);
+  // Must exceed BACKEND_WAIT_MS (2500ms) — the fallback is on a timer, since a
+  // booting instance never answers at all rather than answering with an error.
+  await page.waitForTimeout(3600);
 
   const res = await page.evaluate(() => {
     const badge = document.querySelector(".credibytes-badge");
@@ -108,10 +113,14 @@ const browser = await chromium.launch({ headless: true });
   });
 
   r.check("ad still badged with backend unreachable", res.badged, "");
-  r.check("no PREDICT message sent — local path used",
-          res.predictSent === 0, `PREDICT messages=${res.predictSent}`);
-  r.check("no backend network request", networkCalls === 0, `calls=${networkCalls}`);
-  r.check("profile score present despite dead backend",
+  // Backend-first by design: the deployed service must receive the traffic so
+  // its logs reflect real usage. The local model is the safety net, not the
+  // default. (This assertion was inverted when the order was local-first.)
+  r.check("backend is asked first", res.predictSent === 1,
+          `PREDICT messages=${res.predictSent}`);
+  r.check("content script makes no direct network call", networkCalls === 0,
+          `calls=${networkCalls}`);
+  r.check("local model fills in when the backend never answers",
           typeof res.prob === "number" && !!res.riskDesc,
           `prob=${res.prob} desc=${res.riskDesc}`);
   r.check("badge detail shows the profile signal",
@@ -137,7 +146,9 @@ const browser = await chromium.launch({ headless: true });
     predictSent: window.__sent.filter(m => m.type === "PREDICT").length,
   }));
   r.check("isReady() false when the model is missing", res.ready === false, "");
-  r.check("falls back to the backend in that case",
+  // With no bundled model there is no safety net, so the backend is the only
+  // source — it is still asked exactly once.
+  r.check("backend is the sole source in that case",
           res.predictSent === 1, `PREDICT messages=${res.predictSent}`);
   await page.close();
 }

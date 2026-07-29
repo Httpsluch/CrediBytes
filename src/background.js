@@ -105,9 +105,13 @@ async function appendScan(payload) {
 const WARM_INTERVAL_MS = 10 * 60 * 1000;
 let lastWarmAt = 0;
 
-async function warmBackend() {
+// `force` bypasses the interval. A prediction that just timed out is direct
+// evidence the instance is asleep, so throttling that particular wake-up would
+// defeat the point — the rate limit exists to stop idle polling, not to block
+// a request we know is needed.
+async function warmBackend(force = false) {
   const now = Date.now();
-  if (now - lastWarmAt < WARM_INTERVAL_MS) return;
+  if (!force && now - lastWarmAt < WARM_INTERVAL_MS) return;
   lastWarmAt = now;
   try {
     await fetch(`${BACKEND_URL}/`, { method: "GET", cache: "no-store" });
@@ -151,15 +155,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Reached only when the bundled Stage 1 model failed to load, so it is worth
-// waiting through a cold start rather than giving up immediately.
+// The backend is the preferred source for Stage 1 so the deployed service
+// receives real traffic (and its logs show it). content.js waits only
+// BACKEND_WAIT_MS before falling back to the bundled model, so there is no
+// point waiting longer than that here — a slow answer would arrive after the
+// badge had already rendered.
 //
-// A first attempt on a spun-down free-tier instance usually times out while
-// the container boots; the retry then lands on a warm instance. The old code
-// made a single attempt and returned null on any failure, which is why a cold
-// start was indistinguishable from a broken backend.
-const FIRST_TRY_TIMEOUT_MS = 8000;
-const RETRY_TIMEOUT_MS     = 45000;   // Render cold starts can run 30-60s
+// On failure we kick off a warm request. A spun-down free-tier instance takes
+// 30-60s to boot, so the attempt that just timed out is what wakes it: this ad
+// is served locally, the next one on the page is usually served remotely.
+const PREDICT_TIMEOUT_MS = 2500;
 
 async function postPredict(payload, timeoutMs) {
   const ctrl = new AbortController();
@@ -186,14 +191,12 @@ async function postPredict(payload, timeoutMs) {
 
 async function fetchPrediction(payload) {
   try {
-    return await postPredict(payload, FIRST_TRY_TIMEOUT_MS);
-  } catch (_first) {
-    // Likely a cold start. Nudge the instance and wait longer for one retry.
-    warmBackend();
-    try {
-      return await postPredict(payload, RETRY_TIMEOUT_MS);
-    } catch (_second) {
-      return null;   // content.js renders the badge without the profile line
-    }
+    return await postPredict(payload, PREDICT_TIMEOUT_MS);
+  } catch (_err) {
+    // Timed out, offline, or the instance is still booting. Nudge it so the
+    // next ad can be served remotely, and let content.js use the local model
+    // for this one.
+    warmBackend(true);
+    return null;
   }
 }

@@ -369,17 +369,32 @@
   // ad. The model was trained with this signal, so omitting it at inference
   // (the previous behaviour — backend hardcoded 0) left the model operating in
   // a regime it was never trained on.
-  function requestStage1Prediction(advertiserName, appName, hasOfficialWebsite) {
-    // Local first. The bundled model is the same LightGBM ensemble the backend
-    // serves — identical to floating-point precision — so this is not a
-    // degraded mode. It just skips a network round trip that, on Render's free
-    // tier, can be a 30-60s cold start.
-    const local = window.CrediBytesStage1?.predict(
-      advertiserName, appName, hasOfficialWebsite);
-    if (local) return Promise.resolve(local);
+  // How long the badge waits on the backend before falling back locally.
+  //
+  // A warm Render instance answers in a few hundred milliseconds, so in normal
+  // use the backend wins this race and its logs record the traffic. A spun-down
+  // instance takes 30-60s to boot, which no badge should wait for — the local
+  // model fills in immediately, and the request that just timed out is itself
+  // what wakes the instance, so the next ad on the page is usually served
+  // remotely.
+  const BACKEND_WAIT_MS = 2500;
 
-    // Only reached if stage1_model.js failed to load.
+  function requestStage1Prediction(advertiserName, appName, hasOfficialWebsite) {
+    const localResult = () =>
+      window.CrediBytesStage1?.predict(advertiserName, appName, hasOfficialWebsite) ?? null;
+
+    // No point waiting on the network if the context is already gone.
+    if (!extensionAlive()) return Promise.resolve(localResult());
+
     return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
+      // Backend first, so the deployed service actually receives traffic.
       safeSendMessage(
         {
           type: "PREDICT",
@@ -389,10 +404,16 @@
             hasOfficialWebsite: hasOfficialWebsite ? 1 : 0,
           },
         },
-        // null covers a dead context, an unreachable backend, and a cold start
-        // alike; the badge simply renders without the profile line.
-        (response) => resolve(response?.prediction ?? null)
+        (response) => {
+          const remote = response?.prediction;
+          // A null here means unreachable, cold, or context torn down — fall
+          // back rather than dropping the profile score entirely.
+          finish(remote || localResult());
+        }
       );
+
+      // Safety net: the callback may simply never fire while the instance boots.
+      setTimeout(() => finish(localResult()), BACKEND_WAIT_MS);
     });
   }
 
