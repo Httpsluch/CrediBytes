@@ -79,7 +79,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // request can block another indefinitely; a failed write is swallowed so it
 // cannot wedge the queue.
 
-const MAX_SCANS = 50;
+// Feed depth. 50 was too shallow to filter against: a session scrolling the
+// Meta Ad Library produced ~400 scans, so the tiles read 22 Unregistered while
+// filtering could only surface the 3 that were still inside the window.
+//
+// chrome.storage.local allows ~10 MB and a scan record is well under 1 KB, so
+// 500 is comfortable. Rendering is capped separately (RENDER_LIMIT in
+// popup.js) — the cost is drawing thousands of rows, not storing them.
+const MAX_SCANS = 500;
 let scanWriteQueue = Promise.resolve();
 
 // Running totals, kept separately from the feed.
@@ -168,7 +175,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // ── Stage 1: ML prediction via FastAPI backend ──────────────────────────
   if (message.type === "PREDICT") {
-    fetchPrediction(message.payload)
+    fetchPredictionCached(message.payload)
       .then(prediction => sendResponse({ ok: true, prediction }))
       .catch(() => sendResponse({ ok: false, prediction: null }));
     return true; // keep message channel open for async response
@@ -225,6 +232,43 @@ async function postPredict(payload, timeoutMs) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Predictions are pure: the same three inputs always give the same answer, and
+// Stage 1 sees only the advertiser name, app name and website flag. Scrolling
+// the Ad Library surfaces the same advertisers over and over — one operator ran
+// six re-skinned apps in the collected data — so without a cache each repeat
+// costs another round trip, and dozens of ads arriving together meant dozens of
+// concurrent fetches. That is the lag.
+//
+// In-flight requests are cached too, so N ads for one advertiser share a single
+// request instead of racing.
+const predictionCache = new Map();
+const PREDICTION_CACHE_MAX = 300;
+
+function cacheKey(p) {
+  return `${p.companyName} ${p.platformName} ${p.hasOfficialWebsite ? 1 : 0}`;
+}
+
+function fetchPredictionCached(payload) {
+  const key = cacheKey(payload);
+  if (predictionCache.has(key)) return predictionCache.get(key);
+
+  const inflight = fetchPrediction(payload).then((result) => {
+    // Only a real answer is worth keeping. Caching a null would pin the local
+    // fallback in place for the rest of the session even once the instance woke.
+    if (!result) predictionCache.delete(key);
+    return result;
+  }).catch(() => {
+    predictionCache.delete(key);
+    return null;
+  });
+
+  predictionCache.set(key, inflight);
+  if (predictionCache.size > PREDICTION_CACHE_MAX) {
+    predictionCache.delete(predictionCache.keys().next().value);   // oldest out
+  }
+  return inflight;
 }
 
 async function fetchPrediction(payload) {

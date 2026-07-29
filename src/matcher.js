@@ -184,17 +184,67 @@
   // Tokens shorter than four characters are dropped: they collide with ordinary
   // words far too easily, and a false positive here pulls unrelated ads into
   // the scanner.
-  const REGISTRY_TOKENS = new Set();
+  // Brands are matched whole, not token by token.
+  //
+  // Matching individual tokens was far too loose: "digital" (First Digital
+  // Finance), "pocket" (Peso Pocket) and "star" are ordinary words, so
+  // "Only Digital Library", "Pocket Toons" and "Star Runner Comics" all looked
+  // like registrants. It also MISSED real ones, because advertisers close up
+  // the spaces the registry uses — "MegaPeso" tokenises to {megapeso}, which
+  // matches neither {mega} nor {peso}.
+  //
+  // Comparing compacted strings (letters and digits only) handles both: spacing
+  // and punctuation stop mattering, and a 5-character minimum keeps generic
+  // fragments out.
+  const compact = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  // Only corporate suffixes and geography are stripped here — NOT the product
+  // vocabulary that SUGGEST_STOP removes. Those words are part of the brand:
+  // strip "peso" from "Peso Pocket" and the key collapses to the generic
+  // "pocket", which then matched "Pocket Toons - Fantasy & Action"; strip it
+  // from "Mega Peso" and there is nothing left to match "MegaPeso" against.
+  const BRAND_STOP = new Set([
+    "inc", "corp", "corporation", "company", "co", "the", "of", "and",
+    "lending", "finance", "financing", "services", "group", "technologies",
+    "tech", "ph", "philippine", "philippines", "incorporated", "limited", "ltd",
+  ]);
+
+  function brandWords(str) {
+    return String(str || "").toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter(t => t.length > 1 && !BRAND_STOP.has(t));
+  }
+
+  const REGISTRY_BRANDS = new Set();
   for (const ref of SEC_REFERENCE) {
-    for (const t of tokenize(`${ref.appName || ""} ${ref.company || ""}`)) {
-      if (t.length >= 4) REGISTRY_TOKENS.add(t);
+    for (const source of [ref.appName, ref.company]) {
+      const words = brandWords(source);
+      if (!words.length) continue;
+      // Whole name and its leading two words: the registry writes
+      // "Mega Peso-Fast Cash Easy Loan" where an advertiser just says "MegaPeso".
+      // Five characters is the floor — "Kviku Lending Co. Inc." reduces to the
+      // single word "kviku", and a stricter bound silently dropped it.
+      for (const cand of [words.join(""), words.slice(0, 2).join("")]) {
+        if (cand.length >= 5) REGISTRY_BRANDS.add(cand);
+      }
+      // The leading word alone, at a higher bar. "JuanHand-online cash loan App"
+      // is advertised as plain "JuanHand", which matches neither the full name
+      // nor its first two words.
+      //
+      // Seven characters, not six: "Pocket Cash - Digital Loan" contributed the
+      // head "pocket", which then matched "Pocket Toons - Fantasy & Action".
+      // Ordinary nouns tend to be short, so the length bound is doing the work
+      // a curated blocklist otherwise would.
+      if (words[0].length >= 7) REGISTRY_BRANDS.add(words[0]);
     }
   }
 
   function mentionsKnownRegistrant(text) {
-    if (!text) return false;
-    for (const t of tokenize(String(text))) {
-      if (t.length >= 4 && REGISTRY_TOKENS.has(t)) return true;
+    const hay = compact(text);
+    if (hay.length < 5) return false;
+    for (const brand of REGISTRY_BRANDS) {
+      if (hay.includes(brand)) return true;
     }
     return false;
   }

@@ -86,6 +86,11 @@ const FILTER_TIERS = {
   unregistered: ["danger"],
 };
 
+// The feed stores up to 500 scans but drawing them all is what makes the panel
+// stutter while a page is actively scanning. Rows beyond this are reachable by
+// filtering, which is what the tiles are for.
+const RENDER_LIMIT = 120;
+
 let activeFilter = null;
 let lastScans = [];
 
@@ -142,6 +147,7 @@ function renderScans(scans) {
 
     if (!matchesFilter(cls)) return;
     shown++;
+    if (shown > RENDER_LIMIT) return;   // counted above, just not drawn
 
     const item = document.createElement("div");
     item.className = `scan-item ${cls}`;
@@ -226,6 +232,15 @@ function renderScans(scans) {
   // A filter that matches nothing is not the same as having no scans — say so
   // explicitly rather than showing the "no ads scanned yet" empty state, which
   // would read as though scanning had stopped working.
+  if (shown > RENDER_LIMIT) {
+    const more = document.createElement("div");
+    more.className = "filter-empty";
+    more.textContent =
+      `Showing the ${RENDER_LIMIT} most recent of ${shown} matching scans. ` +
+      `Use the tiles above to narrow the list.`;
+    feed.appendChild(more);
+  }
+
   if (activeFilter && shown === 0) {
     const note = document.createElement("div");
     note.className = "filter-empty";

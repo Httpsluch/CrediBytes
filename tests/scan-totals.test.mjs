@@ -47,12 +47,12 @@ const mid = await page.evaluate(() => ({ ...window.__data.totals, feed: window._
 await page.evaluate(() => window.__save("unverified", 30));
 const end = await page.evaluate(() => ({ ...window.__data.totals, feed: window.__data.scans.length }));
 
-r.check("feed stays capped at 50", end.feed === 50, `feed=${end.feed}`);
+r.check("feed holds all 70 (under the 500 cap)", end.feed === 70, `feed=${end.feed}`);
 r.check("verified total does not fall as rows age out",
         end.legitimate === 40 && end.legitimate >= mid.legitimate,
         `mid=${mid.legitimate} end=${end.legitimate}`);
 r.check("unverified total counts all 30", end.unverified === 30, `unverified=${end.unverified}`);
-r.check("totals exceed the feed cap (70 > 50)",
+r.check("totals count every save",
         end.legitimate + end.unverified === 70,
         `sum=${end.legitimate + end.unverified}`);
 

@@ -103,8 +103,8 @@
   // strong/secondary split is no longer needed. Any keyword hit anywhere
   // in adText + landingUrl + advertiserName qualifies the ad for scanning.
 
-  const OLA_KEYWORDS = [
-    // Explicit lending phrases
+  // Unambiguous lending phrases — one occurrence anywhere is enough.
+  const STRONG_KEYWORDS = [
     "online lending", "lending app", "loan app", "cash loan", "personal loan",
     "instant loan", "quick loan", "pautang online", "online pautang",
     "borrow money", "borrow cash", "mag-apply ng loan", "apply for loan",
@@ -112,9 +112,25 @@
     "lending corporation", "lending inc", "lending company", "lending corp",
     "financing inc", "financing corp", "finance corp", "finance inc",
     "utang online", "pera agad", "cash agad", "loan agad",
-    "ola app", "lending platform",
-    // Generic but valid in this context (covered by advertiserName check below)
-    "loan", "lending", "borrow", "pautang", "utang",
+    "ola app", "lending platform", "loan online", "apply now for a loan",
+  ];
+
+  // Single words that appear in plenty of non-lending copy. A comic promises
+  // you can "borrow" a chapter; a library ad says "loan". These need
+  // corroboration — see isOLAAd().
+  //
+  // v1.1 merged these into one list where any single hit qualified an ad, and
+  // that is why "Pecular Eyewear", "Only Digital Library" and
+  // "Pocket Toons - Fantasy & Action" were being scanned. A blocklist cannot
+  // keep up with every unrelated product category, so the bar is raised
+  // instead of the exclusions being extended indefinitely.
+  const WEAK_KEYWORDS = ["loan", "lending", "borrow", "pautang", "utang", "sangla"];
+
+  // Money words that identify a lender when they appear in the advertiser's OWN
+  // name. Checked against identity only — in ad copy they are meaningless.
+  const FINANCE_NAME_WORDS = [
+    "peso", "piso", "pera", "cash", "credit", "money", "fund", "capital",
+    "finance", "financing", "lend", "loan", "utang", "sangla", "salapi",
   ];
 
   // Store URL hosts — Play/App Store links pointing to apps
@@ -170,8 +186,31 @@
 
     if (looksNonOLA(advertiserName, claimedAppName)) return false;
 
-    const haystack = (adText + " " + landingUrl + " " + advertiserName).toLowerCase();
-    return OLA_KEYWORDS.some(kw => haystack.includes(kw));
+    const identity = `${advertiserName} ${claimedAppName}`.toLowerCase();
+    const haystack = `${adText} ${landingUrl} ${advertiserName}`.toLowerCase();
+
+    // An unambiguous phrase settles it.
+    if (STRONG_KEYWORDS.some(kw => haystack.includes(kw))) return true;
+
+    // A generic word is only meaningful when the advertiser or the app itself
+    // is named for lending — that is the advertiser describing their own
+    // product, not a word that happened to appear in the copy.
+    if (WEAK_KEYWORDS.some(kw => identity.includes(kw))) return true;
+
+    // Naming yourself after money is self-identification, and it is what most
+    // undeclared operators do: Pesohere, MegaPeso, MoneyLoom, Quick Cash,
+    // Ascend Finance. Those ads often carry no lending phrase at all — the brand
+    // IS the pitch — and they are precisely the ones worth catching, since an
+    // undeclared app cannot be recognised from the SEC registry.
+    //
+    // Restricted to the advertiser and app name: "cash" or "credit" in ad copy
+    // means little, but in the advertiser's own name it is deliberate.
+    if (FINANCE_NAME_WORDS.some(kw => identity.includes(kw))) return true;
+
+    // Otherwise require more than one distinct generic term in the body. One
+    // stray "loan" is noise; several different lending words together are not.
+    const distinctWeak = WEAK_KEYWORDS.filter(kw => haystack.includes(kw)).length;
+    return distinctWeak >= 2;
   }
 
   // ── Ad detection ────────────────────────────────────────────────────────────

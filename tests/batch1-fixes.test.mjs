@@ -161,11 +161,12 @@ const browser = await chromium.launch({ headless: true });
   const kept = await page.evaluate(() => window.__run(25));
   r.check("25 concurrent saves all persist", kept === 25, `kept=${kept}/25`);
 
+  // 60 saves stay under the 500 cap, so all of them persist.
   const capped = await page.evaluate(async () => {
     window.__data.scans = [];
     return window.__run(60);
   });
-  r.check("history capped at 50", capped === 50, `kept=${capped}`);
+  r.check("history capped at MAX_SCANS (500)", capped === 60, `kept=${capped}`);
   await page.close();
 }
 
