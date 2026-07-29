@@ -317,10 +317,23 @@
     // not evidence of fraud — it is simply not something we can verify. The
     // matched ref is still returned so the UI can show the entity's real
     // declared channels for the user to compare against.
+    // Reaching Pass 3 means the URL already failed every declared-channel
+    // check, so a matching name CANNOT verify it — the name says who the ad
+    // claims to be, the link says where it actually goes, and only the link is
+    // something the SEC has on record.
+    //
+    // Restricting this to social URLs was not enough. A lookalike domain such
+    // as acom-loans-ph.xyz is not social, matched no declared channel, and
+    // still earned a green "SEC Verified" badge purely because the advertiser
+    // typed a registered company's name — the same spoof as the Messenger case
+    // but harder to spot.
     const nameMatchOnly = (ref, what) => result(
       "name_match_only", ref, "name_match_only",
-      `${what} matches SEC-registered "${ref.company}" (${ref.sec}), but this ad links to a ` +
-      `social or messaging page, which is not a SEC-declared channel. Verify via the official links below.`,
+      `${what} matches SEC-registered "${ref.company}" (${ref.sec}), but this ad links to ` +
+      (social
+        ? "a social or messaging page, which is not a SEC-declared channel."
+        : "a destination that is not among that registrant's SEC-declared channels.") +
+      " Verify via the official links below.",
       null);
 
     if (normApp) {
@@ -328,13 +341,15 @@
       for (const ref of candidates) {
         const refCompany = normalizeName(ref.company);
         if (normCompany && refCompany && normCompany === refCompany) {
-          if (social) return nameMatchOnly(ref, "App and company name");
-          return result("exact_name_match", ref, "legitimate",
-            `App name and company name match SEC registry: "${ref.company}" (${ref.sec}).`, null);
+          return nameMatchOnly(ref, "App and company name");
         }
+        // App name matches but the company differs — weaker still, and kept as
+        // "likely legitimate" only when the link is at least a real site rather
+        // than a social page.
         if (social) return nameMatchOnly(ref, "App name");
         return result("app_name_match", ref, "likely_legitimate",
-          `App name matches SEC registry entry for "${ref.company}" (${ref.sec}), but company name differs.`, null);
+          `App name matches SEC registry entry for "${ref.company}" (${ref.sec}), but company name differs ` +
+          `and the link is not a declared channel.`, null);
       }
     }
 
@@ -342,9 +357,7 @@
       const candidates = companyIndex.get(normCompany) || [];
       for (const ref of candidates) {
         if (!normalizeName(ref.appName)) {
-          if (social) return nameMatchOnly(ref, "Company name");
-          return result("exact_company_name_match", ref, "legitimate",
-            `Company name matches SEC-registered entity: "${ref.company}" (${ref.sec}).`, null);
+          return nameMatchOnly(ref, "Company name");
         }
       }
     }

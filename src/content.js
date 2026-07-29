@@ -363,15 +363,30 @@
     return text && text !== "Sponsored" ? text.slice(0, 100) : "";
   }
 
+  // Facebook wraps outbound links through several hosts, not just l.facebook.com:
+  // lm.facebook.com on mobile-rendered surfaces and l.messenger.com from
+  // Messenger-origin ads. Missing one leaves the wrapper as the "destination",
+  // so the ad looks like it points at Facebook itself.
+  const FB_REDIRECT_HOSTS = new Set([
+    "l.facebook.com", "lm.facebook.com", "l.messenger.com", "l.instagram.com",
+  ]);
+
   function unwrapFBRedirect(url) {
-    try {
-      const u = new URL(url);
-      if (u.hostname === "l.facebook.com") {
-        const inner = u.searchParams.get("u");
-        if (inner) return decodeURIComponent(inner);
+    let current = String(url || "");
+    // Wrappers occasionally nest (a shim around a shim); a small bounded loop
+    // resolves those without risking a cycle.
+    for (let i = 0; i < 3; i++) {
+      try {
+        const u = new URL(current);
+        if (!FB_REDIRECT_HOSTS.has(u.hostname)) return current;
+        const inner = u.searchParams.get("u") || u.searchParams.get("url");
+        if (!inner) return current;
+        current = decodeURIComponent(inner);
+      } catch {
+        return current;
       }
-      return url;
-    } catch { return url; }
+    }
+    return current;
   }
 
   // Rank candidate links instead of taking the first in DOM order.
@@ -397,10 +412,21 @@
   }
 
   function extractAdData(adEl) {
-    const links = [...adEl.querySelectorAll("a[href]")]
-      .map(a => unwrapFBRedirect(a.href))          // unwrap BEFORE ranking, so
-      .filter(href =>                              // l.facebook.com wrappers are
-        href.startsWith("http") &&                 // judged on their destination
+    // Facebook stores an ad's true destination in data-lynx-uri, leaving href
+    // as an internal redirect. Reading only href meant an ACOM ad pointing at
+    // acom.com.ph — a domain the SEC has on record — was judged on a
+    // facebook.com URL and came back "Name Match Only" instead of verified.
+    const raw = [];
+    for (const a of adEl.querySelectorAll("a[href], a[data-lynx-uri]")) {
+      const lynx = a.getAttribute("data-lynx-uri");
+      if (lynx) raw.push(lynx);      // first: it is the real destination
+      if (a.href) raw.push(a.href);
+    }
+
+    const links = raw
+      .map(unwrapFBRedirect)                       // unwrap BEFORE ranking, so
+      .filter(href =>                              // redirect shims are judged
+        href.startsWith("http") &&                 // on their destination
         !href.includes("facebook.com/ads/library") &&
         !href.includes("/ads/archive")
       );
