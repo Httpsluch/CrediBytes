@@ -878,6 +878,11 @@
         legitimacy,
         status,
         label: verdictOf(legitimacy, status, store).label,
+        // Tier the badge actually rendered, e.g. "legitimate" / "danger".
+        // Stored so background.js can keep running totals and popup.js can
+        // colour the row without either of them re-deriving the verdict — the
+        // rules live in verdictOf() alone.
+        tier: verdictOf(legitimacy, status, store).cls.replace(/^cb-/, ""),
         reason,
         advertiserName: advertiserName || "",
         company:        ref?.company    || "",

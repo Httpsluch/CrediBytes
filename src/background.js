@@ -82,14 +82,45 @@ chrome.storage.onChanged.addListener((changes, area) => {
 const MAX_SCANS = 50;
 let scanWriteQueue = Promise.resolve();
 
+// Running totals, kept separately from the feed.
+//
+// The stat tiles used to be derived from the stored `scans` array, which is
+// capped at MAX_SCANS. Once that cap is reached every new scan evicts an old
+// one, so a tile could go DOWN: scrolling the Ad Library took Verified from 22
+// to 20 while Unverified rose, because two verified rows had aged out. The
+// three tiles always summed to exactly 50, which is what gave it away.
+//
+// Totals now count every scan since the last clear; the feed stays a rolling
+// window of the most recent MAX_SCANS.
+const EMPTY_TOTALS = { legitimate: 0, likely: 0, namematch: 0, unverified: 0, danger: 0 };
+
 function enqueueScan(payload) {
   scanWriteQueue = scanWriteQueue.then(() => appendScan(payload)).catch(() => {});
   return scanWriteQueue;
 }
 
+// Mirrors verdictOf() in content.js for records saved before `tier` existed.
+function tierOf(scan) {
+  if (scan.tier) return scan.tier;
+  if (scan.legitimacy === "legitimate")        return "legitimate";
+  if (scan.legitimacy === "likely_legitimate") return "likely";
+  if (scan.legitimacy === "name_match_only")   return "namematch";
+  if (scan.status === "no_reference_match" && scan.isStoreUrl) return "danger";
+  return "unverified";
+}
+
 async function appendScan(payload) {
-  const { scans = [] } = await chrome.storage.local.get("scans");
-  await chrome.storage.local.set({ scans: [payload, ...scans].slice(0, MAX_SCANS) });
+  const { scans = [], totals = { ...EMPTY_TOTALS } } =
+    await chrome.storage.local.get(["scans", "totals"]);
+
+  const tier = tierOf(payload);
+  const nextTotals = { ...EMPTY_TOTALS, ...totals };
+  nextTotals[tier] = (nextTotals[tier] || 0) + 1;
+
+  await chrome.storage.local.set({
+    scans: [payload, ...scans].slice(0, MAX_SCANS),
+    totals: nextTotals,
+  });
 }
 
 // ── Keeping the fallback backend warm ───────────────────────────────────────
@@ -150,7 +181,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "CLEAR_SCANS") {
-    chrome.storage.local.set({ scans: [] }, () => sendResponse({ ok: true }));
+    // Totals reset with the feed, otherwise "Clear all" would empty the list
+    // while the tiles kept counting history the user just deleted. Queued
+    // behind any in-flight save so a scan landing mid-clear cannot resurrect
+    // a stale total.
+    scanWriteQueue = scanWriteQueue
+      .then(() => chrome.storage.local.set({ scans: [], totals: { ...EMPTY_TOTALS } }))
+      .catch(() => {});
+    scanWriteQueue.then(() => sendResponse({ ok: true }));
     return true;
   }
 });

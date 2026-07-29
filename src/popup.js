@@ -59,6 +59,19 @@ function getBadgeClass(scan) {
 
 // ── Render scan list ───────────────────────────────────────────────────────────
 
+// Tiles come from cumulative totals, not from the visible feed. The feed is
+// capped at 50, so counting it made a tile fall as older rows aged out.
+let currentTotals = null;
+
+function renderTotals(totals, fallback) {
+  const t = totals || fallback;
+  document.getElementById("count-legit").textContent      = t.legitimate;
+  // Name Match Only is not a verification, so it is reported under Unverified.
+  document.getElementById("count-unverified").textContent =
+    t.unverified + t.likely + t.namematch;
+  document.getElementById("count-danger").textContent     = t.danger;
+}
+
 function renderScans(scans) {
   const feed    = document.getElementById("feed");
   const empty   = document.getElementById("empty-state");
@@ -70,9 +83,7 @@ function renderScans(scans) {
   if (!scans || scans.length === 0) {
     empty.style.display = "block";
     countEl.textContent = "0 scans";
-    document.getElementById("count-legit").textContent      = "0";
-    document.getElementById("count-unverified").textContent = "0";
-    document.getElementById("count-danger").textContent     = "0";
+    renderTotals(currentTotals, { legitimate: 0, likely: 0, namematch: 0, unverified: 0, danger: 0 });
     return;
   }
 
@@ -167,9 +178,10 @@ function renderScans(scans) {
     feed.appendChild(item);
   });
 
-  document.getElementById("count-legit").textContent      = legit;
-  document.getElementById("count-unverified").textContent = unverified;
-  document.getElementById("count-danger").textContent     = danger;
+  // Prefer stored totals; fall back to counting the feed for histories saved
+  // before totals existed.
+  renderTotals(currentTotals,
+               { legitimate: legit, likely: 0, namematch: 0, unverified, danger });
 }
 
 // ── Clear scans ────────────────────────────────────────────────────────────────
@@ -177,6 +189,7 @@ function renderScans(scans) {
 
 function clearScans() {
   chrome.runtime.sendMessage({ type: "CLEAR_SCANS" }, () => {
+    currentTotals = { legitimate: 0, likely: 0, namematch: 0, unverified: 0, danger: 0 };
     renderScans([]);
   });
 }
@@ -328,10 +341,18 @@ document.getElementById("expand-btn")?.addEventListener("click", () => {
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
-chrome.storage.local.get("scans", (data) => renderScans(data.scans || []));
+chrome.storage.local.get(["scans", "totals"], (data) => {
+  currentTotals = data.totals || null;
+  renderScans(data.scans || []);
+});
 loadSettings();
 
 // Live update when storage changes (e.g. new scan comes in while popup is open)
 chrome.storage.onChanged.addListener((changes) => {
-  if (changes.scans) renderScans(changes.scans.newValue || []);
+  // totals and scans are written together, so read the new totals first —
+  // otherwise the tiles would lag the feed by one scan.
+  if (changes.totals) currentTotals = changes.totals.newValue || null;
+  if (changes.scans)  renderScans(changes.scans.newValue || []);
+  else if (changes.totals) renderTotals(currentTotals,
+    { legitimate: 0, likely: 0, namematch: 0, unverified: 0, danger: 0 });
 });
