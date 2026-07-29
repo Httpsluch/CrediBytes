@@ -138,6 +138,22 @@
     "grocery", "restaurant", "food delivery", "fashion", "clothing",
   ];
 
+  // Apps that present as a utility (a repayment calculator) while their ad copy
+  // sells loans. Deliberately NOT in NON_OLA_KEYWORDS: Stage 2 analysis found
+  // 30 of 69 undeclared advertised apps (43%) use this naming, so excluding
+  // them would discard a documented finding.
+  //
+  // They are still scanned and still reported as undeclared — which is factually
+  // true — but the badge says why the listing looks like a utility, because a
+  // genuine calculator is not an OLA and has no duty to register. The user gets
+  // the discrepancy rather than an unqualified accusation.
+  const CALCULATOR_HINTS = ["calculator", "calc", "emi", "planner", "estimator", "budget tracker"];
+
+  function looksLikeCalculator(claimedAppName) {
+    const t = String(claimedAppName || "").toLowerCase();
+    return CALCULATOR_HINTS.some(kw => t.includes(kw));
+  }
+
   function looksNonOLA(advertiserName, claimedAppName) {
     const identity = `${advertiserName || ""} ${claimedAppName || ""}`.toLowerCase();
     return NON_OLA_KEYWORDS.some(kw => identity.includes(kw));
@@ -450,6 +466,7 @@
 
     const { legitimacy, reason, ref, status, suggestion } = matchResult;
     const store      = window.CrediBytesMatcher.isStoreUrl(matchResult._adUrl || "");
+    const claimedAppName = matchResult._claimedAppName || "";
     const riskDesc   = stage1Result?.risk_desc   ?? null;
     const isApp      = stage1Result?.is_app      ?? null;
     const prob       = stage1Result?.probability ?? null;
@@ -536,6 +553,17 @@
       addRow("Company", suggestion.company);
       addRow("SEC No.", suggestion.sec);
       addDeclaredChannels(suggestion);
+    }
+
+    // Explains the discrepancy rather than leaving "Unregistered App" to imply
+    // the app was obliged to register. A calculator genuinely is not an OLA;
+    // one whose advertising sells loans is the pattern worth surfacing.
+    if (!ref && store && looksLikeCalculator(claimedAppName)) {
+      addSection("Listing type");
+      addRow("", "This listing presents itself as a calculator or planning tool, " +
+                 "but the advertisement offers loans. Utilities are not required " +
+                 "to register with the SEC, so treat the absence of a declaration " +
+                 "here as a mismatch to check rather than proof of wrongdoing.");
     }
 
     if (riskDesc) {
@@ -842,6 +870,7 @@
       landingUrl, claimedAppName, advertiserName
     );
     matchResult._adUrl = landingUrl;
+    matchResult._claimedAppName = claimedAppName;
 
     // Only a confirmed SEC match counts. matchResult.suggestion is a fuzzy
     // guess and must not be treated as a verified website.

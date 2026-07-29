@@ -34,8 +34,13 @@
 
 /* The viewer's OS theme drives the palette; the panel is often open for long
    stretches next to a dark Facebook, and a white slab beside it is harsh. */
+/* Theme resolution.
+   The viewer's OS drives the palette by default; the panel often sits open
+   beside a dark Facebook, and a white slab next to it is harsh. An explicit
+   choice in Settings overrides that, so the dark values are applied on two
+   selectors: OS-dark-unless-forced-light, and forced-dark. */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
         --bg:        #0e1018;
         --surface:   #171a24;
         --surface-2: #1c202c;
@@ -54,6 +59,24 @@
         --shadow: 0 1px 2px rgba(0,0,0,.4);
     }
 }
+:root[data-theme="dark"] {
+        --bg:        #0e1018;
+        --surface:   #171a24;
+        --surface-2: #1c202c;
+        --border:    #282d3b;
+        --text:      #e9ebf2;
+        --text-2:    #9ea4b8;
+        --text-3:    #6d7387;
+        --brand-ink: #10131d;
+
+        --green-bg:  #10301f;
+        --amber-bg:  #322709;
+        --orange-bg: #35200f;
+        --red-bg:    #351319;
+        --violet-bg: #241c3d;
+
+        --shadow: 0 1px 2px rgba(0,0,0,.4);
+    }
 
 /* A Chrome popup has no viewport height of its own — it sizes to content, up
    to 600px. `height:100%` therefore resolved against nothing, so `.feed`'s
@@ -131,13 +154,29 @@ body {
     flex: 1; text-align: center; padding: 9px 4px;
     background: var(--surface-2); border: 1px solid var(--border);
     border-radius: var(--radius);
+    font-family: inherit; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    transition: border-color .12s, background .12s, transform .08s;
 }
-.stat-num { font-size: 19px; font-weight: 700; line-height: 1.1; }
+.stat:hover { border-color: var(--text-3); }
+.stat:active { transform: scale(.98); }
+.stat:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Active filter: the tile itself is the indicator, so no extra chrome is
+   needed elsewhere in the feed. */
+.stat[aria-pressed="true"] {
+    background: var(--surface);
+    border-color: currentColor;
+    box-shadow: inset 0 0 0 1px currentColor;
+}
+.stat[data-filter="verified"][aria-pressed="true"]     { color: var(--green); }
+.stat[data-filter="unverified"][aria-pressed="true"]   { color: var(--orange); }
+.stat[data-filter="unregistered"][aria-pressed="true"] { color: var(--red); }
+.stat-num { font-size: 19px; font-weight: 700; line-height: 1.1; display: block; }
 .stat-num.green  { color: var(--green); }
 .stat-num.orange { color: var(--orange); }
 .stat-num.red    { color: var(--red); }
 .stat-label {
-    font-size: 9.5px; color: var(--text-3); margin-top: 3px;
+    font-size: 9.5px; color: var(--text-3); display: block;
     text-transform: uppercase; letter-spacing: .5px; font-weight: 600;
 }
 
@@ -288,4 +327,31 @@ input:checked + .slider:before { transform: translateX(17px); }
 
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
+}
+
+/* ── Segmented control (theme) ───────────────────────────────────────────── */
+
+.seg {
+    display: flex; gap: 4px; padding: 3px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.seg-btn {
+    flex: 1; padding: 7px 4px; font-size: 11.5px; font-weight: 600;
+    font-family: inherit; color: var(--text-2);
+    background: none; border: none; border-radius: 7px; cursor: pointer;
+    transition: background .12s, color .12s;
+}
+.seg-btn:hover { color: var(--text); }
+.seg-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.seg-btn[aria-checked="true"] {
+    background: var(--surface); color: var(--text);
+    box-shadow: var(--shadow);
+}
+
+/* Feed empty because a filter excludes everything — distinct from having no
+   scans at all, so the user is not told scanning has failed. */
+.filter-empty {
+    text-align: center; padding: 22px 16px;
+    font-size: 11.5px; color: var(--text-3); line-height: 1.6;
 }

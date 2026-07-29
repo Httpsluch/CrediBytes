@@ -19,3 +19,20 @@
 if (new URLSearchParams(location.search).has("panel")) {
   document.documentElement.classList.add("is-sidepanel");
 }
+
+// Theme, applied before first paint for the same reason.
+//
+// chrome.storage holds the real setting so it is shared between the popup and
+// the side panel, but its reads are async — by the time one resolved the page
+// would already have painted, flashing the wrong palette on every open. popup.js
+// mirrors each change into localStorage, which is synchronous, purely so this
+// can run early. "system" writes no attribute, leaving prefers-color-scheme in
+// charge.
+try {
+  const theme = localStorage.getItem("cb-theme");
+  if (theme === "light" || theme === "dark") {
+    document.documentElement.setAttribute("data-theme", theme);
+  }
+} catch (_e) {
+  /* localStorage unavailable — fall back to the OS preference. */
+}

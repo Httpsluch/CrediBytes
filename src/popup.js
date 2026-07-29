@@ -72,13 +72,53 @@ function renderTotals(totals, fallback) {
   document.getElementById("count-danger").textContent     = t.danger;
 }
 
+// ── Feed filter ────────────────────────────────────────────────────────────────
+// Single-select: clicking a tile shows only that result, clicking a different
+// tile switches to it, clicking the active tile clears. Scanning is unaffected —
+// new scans keep arriving and the tiles keep counting; this only narrows what
+// the feed displays.
+//
+// Grouped to match the tiles: "Unverified" covers likely_legitimate and
+// name_match_only too, since neither is a verification.
+const FILTER_TIERS = {
+  verified:     ["legitimate"],
+  unverified:   ["unverified", "likely", "namematch"],
+  unregistered: ["danger"],
+};
+
+let activeFilter = null;
+let lastScans = [];
+
+function matchesFilter(cls) {
+  return !activeFilter || FILTER_TIERS[activeFilter].includes(cls);
+}
+
+function syncFilterButtons() {
+  document.querySelectorAll(".stat[data-filter]").forEach(btn => {
+    btn.setAttribute("aria-pressed", String(btn.dataset.filter === activeFilter));
+  });
+}
+
+function setFilter(name) {
+  activeFilter = activeFilter === name ? null : name;   // click again to clear
+  syncFilterButtons();
+  renderScans(lastScans);
+}
+
+document.querySelectorAll(".stat[data-filter]").forEach(btn => {
+  btn.addEventListener("click", () => setFilter(btn.dataset.filter));
+});
+
 function renderScans(scans) {
   const feed    = document.getElementById("feed");
   const empty   = document.getElementById("empty-state");
   const countEl = document.getElementById("scan-count");
 
+  lastScans = scans || [];
+
   // Remove all previous scan items (keep #empty-state)
   feed.querySelectorAll(".scan-item").forEach(el => el.remove());
+  feed.querySelector(".filter-empty")?.remove();
 
   if (!scans || scans.length === 0) {
     empty.style.display = "block";
@@ -91,12 +131,17 @@ function renderScans(scans) {
   countEl.textContent = `${scans.length} scan${scans.length !== 1 ? "s" : ""}`;
 
   let legit = 0, unverified = 0, danger = 0;
+  let shown = 0;
 
   scans.forEach(scan => {
     const cls = getBadgeClass(scan);
+    // Counted before filtering: the tiles report totals, not the filtered view.
     if (cls === "legitimate") legit++;
     else if (cls === "danger") danger++;
     else unverified++;
+
+    if (!matchesFilter(cls)) return;
+    shown++;
 
     const item = document.createElement("div");
     item.className = `scan-item ${cls}`;
@@ -178,11 +223,59 @@ function renderScans(scans) {
     feed.appendChild(item);
   });
 
+  // A filter that matches nothing is not the same as having no scans — say so
+  // explicitly rather than showing the "no ads scanned yet" empty state, which
+  // would read as though scanning had stopped working.
+  if (activeFilter && shown === 0) {
+    const note = document.createElement("div");
+    note.className = "filter-empty";
+    note.textContent = `No ${activeFilter} results in the last ${scans.length} scans.`;
+    feed.appendChild(note);
+  }
+
   // Prefer stored totals; fall back to counting the feed for histories saved
   // before totals existed.
   renderTotals(currentTotals,
                { legitimate: legit, likely: 0, namematch: 0, unverified, danger });
 }
+
+// ── Theme ──────────────────────────────────────────────────────────────────────
+// Three states: light, dark, and system (the default, following the OS).
+//
+// chrome.storage is the source of truth so the choice is shared between the
+// popup and the side panel. It is also mirrored into localStorage because
+// chrome.storage reads are async: panel-init.js runs before first paint and can
+// only read something synchronous, and without that mirror the panel would
+// flash the wrong palette on every open.
+
+const THEMES = ["light", "dark", "system"];
+
+function applyTheme(theme) {
+  const root = document.documentElement;
+  // "system" means remove the override and let the prefers-color-scheme media
+  // query decide, rather than hard-coding whichever palette is current.
+  if (theme === "light" || theme === "dark") root.setAttribute("data-theme", theme);
+  else root.removeAttribute("data-theme");
+
+  document.querySelectorAll(".seg-btn[data-theme]").forEach(btn => {
+    btn.setAttribute("aria-checked", String(btn.dataset.theme === theme));
+  });
+}
+
+function setTheme(theme) {
+  if (!THEMES.includes(theme)) theme = "system";
+  applyTheme(theme);
+  try { localStorage.setItem("cb-theme", theme); } catch (_e) { /* private mode */ }
+  chrome.storage.local.get("settings", (data) => {
+    const s = data.settings || {};
+    s.theme = theme;
+    chrome.storage.local.set({ settings: s });
+  });
+}
+
+document.querySelectorAll(".seg-btn[data-theme]").forEach(btn => {
+  btn.addEventListener("click", () => setTheme(btn.dataset.theme));
+});
 
 // ── Clear scans ────────────────────────────────────────────────────────────────
 // Routes through background.js (single writer) to prevent race conditions.
@@ -218,6 +311,10 @@ function loadSettings() {
   chrome.storage.local.get("settings", (data) => {
     const s = data.settings || {};
     document.getElementById("toggle-scanning").checked = s.scanningEnabled !== false;
+
+    // Reconcile the stored theme with the value panel-init.js already applied
+    // from the localStorage mirror; storage wins if they ever diverge.
+    applyTheme(THEMES.includes(s.theme) ? s.theme : "system");
 
     const mode = s.displayMode || "badge";
     const radio = document.querySelector(`input[name="display-mode"][value="${mode}"]`);

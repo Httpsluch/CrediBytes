@@ -31,19 +31,21 @@
 
   <!-- ── Scan Results Panel ── -->
   <div class="panel active" id="panel-scans" role="tabpanel">
-    <div class="stats">
-      <div class="stat">
-        <div class="stat-num green" id="count-legit">0</div>
-        <div class="stat-label">Verified</div>
-      </div>
-      <div class="stat">
-        <div class="stat-num orange" id="count-unverified">0</div>
-        <div class="stat-label">Unverified</div>
-      </div>
-      <div class="stat">
-        <div class="stat-num red" id="count-danger">0</div>
-        <div class="stat-label">Unregistered</div>
-      </div>
+    <!-- Buttons, not divs: filtering is an action, so it must be reachable by
+         keyboard and announced. aria-pressed carries the on/off state. -->
+    <div class="stats" role="group" aria-label="Filter scans by result">
+      <button class="stat" type="button" data-filter="verified" aria-pressed="false">
+        <span class="stat-num green" id="count-legit">0</span>
+        <span class="stat-label">Verified</span>
+      </button>
+      <button class="stat" type="button" data-filter="unverified" aria-pressed="false">
+        <span class="stat-num orange" id="count-unverified">0</span>
+        <span class="stat-label">Unverified</span>
+      </button>
+      <button class="stat" type="button" data-filter="unregistered" aria-pressed="false">
+        <span class="stat-num red" id="count-danger">0</span>
+        <span class="stat-label">Unregistered</span>
+      </button>
     </div>
 
     <div class="feed-header">
@@ -104,6 +106,18 @@
         </label>
       </div>
       <div class="settings-status" id="mode-status" role="status"></div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label">Appearance</div>
+      <div class="seg" role="radiogroup" aria-label="Colour theme">
+        <button class="seg-btn" type="button" data-theme="light"  role="radio" aria-checked="false">Light</button>
+        <button class="seg-btn" type="button" data-theme="dark"   role="radio" aria-checked="false">Dark</button>
+        <button class="seg-btn" type="button" data-theme="system" role="radio" aria-checked="true">System</button>
+      </div>
+      <div class="radio-sub" style="margin-top:6px">
+        System follows your operating system setting.
+      </div>
     </div>
 
     <div class="settings-section">
