@@ -30,6 +30,21 @@
     return h === "play.google.com" || h === "apps.apple.com" || h === "itunes.apple.com";
   }
 
+  // Social and messaging destinations. These can never be SEC-declared digital
+  // channels — a registrant declares apps and websites, not a Facebook page —
+  // so a name match against one of these cannot verify an advertisement.
+  const SOCIAL_HOSTS = [
+    "facebook.com", "fb.com", "fb.me", "m.me", "messenger.com",
+    "instagram.com", "wa.me", "whatsapp.com", "t.me", "telegram.me",
+    "tiktok.com", "viber.com",
+  ];
+
+  function isSocialUrl(url) {
+    const h = normHost(url);
+    if (!h) return false;
+    return SOCIAL_HOSTS.some(d => h === d || h.endsWith("." + d));
+  }
+
   function playPackageId(url) {
     try {
       const u = new URL(url);
@@ -159,6 +174,31 @@
     return bestScore >= 0.60 ? bestRef : null;
   }
 
+  // ── Registry brand recognition ─────────────────────────────────────────────
+  // Distinctive brand tokens drawn from every registered app and company name,
+  // used to recognise an OLA advertisement that contains no lending vocabulary
+  // at all. A JuanHand ad reading "Relate na relate kami, Donna Cariaga! Good
+  // thing, nandiyan si JuanHand para sa'yo!" has no keyword to match, yet
+  // JuanHand is a registered platform of Wefund Lending Corp.
+  //
+  // Tokens shorter than four characters are dropped: they collide with ordinary
+  // words far too easily, and a false positive here pulls unrelated ads into
+  // the scanner.
+  const REGISTRY_TOKENS = new Set();
+  for (const ref of SEC_REFERENCE) {
+    for (const t of tokenize(`${ref.appName || ""} ${ref.company || ""}`)) {
+      if (t.length >= 4) REGISTRY_TOKENS.add(t);
+    }
+  }
+
+  function mentionsKnownRegistrant(text) {
+    if (!text) return false;
+    for (const t of tokenize(String(text))) {
+      if (t.length >= 4 && REGISTRY_TOKENS.has(t)) return true;
+    }
+    return false;
+  }
+
   // ── Main matcher ───────────────────────────────────────────────────────────
 
   function matchUrl(adUrl, claimedAppName = "", claimedCompany = "", fixedAppleUrl = "") {
@@ -212,15 +252,37 @@
     // Pass 3 — exact normalized name match via Maps (non-store only)
     const normApp     = normalizeName(claimedAppName);
     const normCompany = normalizeName(claimedCompany);
+    const social      = isSocialUrl(adUrl);
+
+    // A Facebook page, profile or Messenger thread is never a SEC-declared
+    // digital channel, so matching text alone must not verify the ad.
+    //
+    // Previously it did: matchUrl("https://m.me/snapcashph", "", "Snapcash
+    // Lending Inc.") returned "legitimate" and rendered a green SEC Verified
+    // badge. Anyone can put a registered company's name on a page, which is
+    // exactly the impersonation pattern reported.
+    //
+    // The verdict is deliberately neutral rather than accusatory: legitimate
+    // Philippine lenders do run "message us" campaigns, so a Messenger link is
+    // not evidence of fraud — it is simply not something we can verify. The
+    // matched ref is still returned so the UI can show the entity's real
+    // declared channels for the user to compare against.
+    const nameMatchOnly = (ref, what) => result(
+      "name_match_only", ref, "name_match_only",
+      `${what} matches SEC-registered "${ref.company}" (${ref.sec}), but this ad links to a ` +
+      `social or messaging page, which is not a SEC-declared channel. Verify via the official links below.`,
+      null);
 
     if (normApp) {
       const candidates = appNameIndex.get(normApp) || [];
       for (const ref of candidates) {
         const refCompany = normalizeName(ref.company);
         if (normCompany && refCompany && normCompany === refCompany) {
+          if (social) return nameMatchOnly(ref, "App and company name");
           return result("exact_name_match", ref, "legitimate",
             `App name and company name match SEC registry: "${ref.company}" (${ref.sec}).`, null);
         }
+        if (social) return nameMatchOnly(ref, "App name");
         return result("app_name_match", ref, "likely_legitimate",
           `App name matches SEC registry entry for "${ref.company}" (${ref.sec}), but company name differs.`, null);
       }
@@ -230,6 +292,7 @@
       const candidates = companyIndex.get(normCompany) || [];
       for (const ref of candidates) {
         if (!normalizeName(ref.appName)) {
+          if (social) return nameMatchOnly(ref, "Company name");
           return result("exact_company_name_match", ref, "legitimate",
             `Company name matches SEC-registered entity: "${ref.company}" (${ref.sec}).`, null);
         }
@@ -247,6 +310,7 @@
     return { status, ref, legitimacy, reason, suggestion };
   }
 
-  window.CrediBytesMatcher = { matchUrl, playPackageId, appleAppId, normHost, isStoreUrl };
+  window.CrediBytesMatcher = { matchUrl, playPackageId, appleAppId, normHost, isStoreUrl, isSocialUrl,
+                               mentionsKnownRegistrant };
 
 })();

@@ -66,6 +66,32 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+// ── Scan history writes, serialised ─────────────────────────────────────────
+// Saving a scan is read-modify-write: get the array, unshift, put it back.
+// content.js processes ads concurrently (findAdElements().forEach, no await),
+// so several SAVE_SCAN messages are in flight at once. Each handler used to
+// read the array independently, and whichever set() landed last silently
+// discarded the others' entries — badges appeared on the page with no matching
+// row in the popup or side panel.
+//
+// Every write now queues behind the previous one, so each read sees the result
+// of the write before it. The chain is a single promise, not a lock, so no
+// request can block another indefinitely; a failed write is swallowed so it
+// cannot wedge the queue.
+
+const MAX_SCANS = 50;
+let scanWriteQueue = Promise.resolve();
+
+function enqueueScan(payload) {
+  scanWriteQueue = scanWriteQueue.then(() => appendScan(payload)).catch(() => {});
+  return scanWriteQueue;
+}
+
+async function appendScan(payload) {
+  const { scans = [] } = await chrome.storage.local.get("scans");
+  await chrome.storage.local.set({ scans: [payload, ...scans].slice(0, MAX_SCANS) });
+}
+
 // ── Keeping the fallback backend warm ───────────────────────────────────────
 // Stage 1 normally runs locally (see stage1.js), so the backend is only the
 // fallback. But Render's free tier spins down after ~15 minutes idle, and a
@@ -115,12 +141,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // ── Save scan result to storage (single writer — no race conditions) ─────
   if (message.type === "SAVE_SCAN") {
-    chrome.storage.local.get("scans", (data) => {
-      const scans = data.scans || [];
-      scans.unshift(message.payload);
-      chrome.storage.local.set({ scans: scans.slice(0, 50) });
-      sendResponse({ ok: true });
-    });
+    enqueueScan(message.payload).then(() => sendResponse({ ok: true }));
     return true;
   }
 

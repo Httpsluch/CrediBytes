@@ -46,6 +46,9 @@ window.addEventListener("pagehide", () => clearInterval(timeTicker));
 function getBadgeClass(scan) {
   if (scan.legitimacy === "legitimate")        return "legitimate";
   if (scan.legitimacy === "likely_legitimate") return "likely";
+  // Registrant name matched, but the ad links to a social or messaging page,
+  // which is never a SEC-declared channel — so it is not a verification.
+  if (scan.legitimacy === "name_match_only")   return "namematch";
   // isStoreUrl is now saved in the payload by content.js v1.1
   // Graceful fallback: if the field is missing (older stored scan), treat as unverified
   if (scan.legitimacy === "unverified" &&

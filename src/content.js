@@ -120,14 +120,42 @@
   // Store URL hosts — Play/App Store links pointing to apps
   const STORE_HOSTS = ["play.google.com", "apps.apple.com"];
 
-  function isOLAAd(adText, landingUrl, advertiserName = "") {
+  // Product categories that are not lending but whose advertising copy trips the
+  // generic keywords above — a romance serial about debt matches "utang", and
+  // "borrow" appears in book promotions. Matched against the advertiser name and
+  // app title only, never the body text: a genuine lending ad may well say
+  // "book your loan today", and excluding on that would lose it.
+  //
+  // The batch collector (collect_ad_links.mjs) has always had a list like this;
+  // the extension never did, which is why "Novels Lover" and "Romance Novel"
+  // were being scanned.
+  const NON_OLA_KEYWORDS = [
+    "novel", "story", "stories", "chapter", "manga", "webtoon", "comic",
+    "romance", "fiction", "ebook", "audiobook", "wattpad",
+    "game", "gaming", "puzzle", "casino", "slot", "bet",
+    "movie", "series", "anime", "music", "podcast",
+    "pharmacy", "clinic", "vitamin", "supplement", "skincare", "cosmetic",
+    "grocery", "restaurant", "food delivery", "fashion", "clothing",
+  ];
+
+  function looksNonOLA(advertiserName, claimedAppName) {
+    const identity = `${advertiserName || ""} ${claimedAppName || ""}`.toLowerCase();
+    return NON_OLA_KEYWORDS.some(kw => identity.includes(kw));
+  }
+
+  function isOLAAd(adText, landingUrl, advertiserName = "", claimedAppName = "") {
+    // A registered brand name is decisive on its own. Plenty of real OLA ads
+    // carry no lending vocabulary at all — "Relate na relate kami, Donna
+    // Cariaga! Good thing, nandiyan si JuanHand para sa'yo!" was being skipped
+    // even though JuanHand is a declared platform of Wefund Lending Corp.
+    // Checked first so a registrant is never dropped by the exclusion below.
+    const M = window.CrediBytesMatcher;
+    if (M?.mentionsKnownRegistrant?.(`${advertiserName} ${claimedAppName}`)) return true;
+
+    if (looksNonOLA(advertiserName, claimedAppName)) return false;
+
     const haystack = (adText + " " + landingUrl + " " + advertiserName).toLowerCase();
-
-    // Any keyword match anywhere is sufficient
-    if (OLA_KEYWORDS.some(kw => haystack.includes(kw))) return true;
-
-    // Bare store URL with no keyword — probably not an OLA
-    return false;
+    return OLA_KEYWORDS.some(kw => haystack.includes(kw));
   }
 
   // ── Ad detection ────────────────────────────────────────────────────────────
@@ -291,17 +319,44 @@
     } catch { return url; }
   }
 
+  // Rank candidate links instead of taking the first in DOM order.
+  //
+  // The old code used links[0], which is whatever markup happens to come first
+  // — usually the advertiser's profile or avatar link, and in an Ad Library
+  // card the "See ad details" control. The real destination sits later, on the
+  // call-to-action. That is why a Cashify ad pointing at a Play Store package
+  // the SEC *does* declare (com.cashola.loan.cash.peso, SunLoan Lending
+  // Investors Corporation) was judged on a facebook.com URL and came back
+  // unverified rather than SEC Verified.
+  //
+  // Store links rank first because they identify an exact app; an external
+  // site next; a Facebook destination last, since it is never a declared
+  // channel and only matters when there is nothing else.
+  function rankLink(url) {
+    const u = url.toLowerCase();
+    if (u.includes("play.google.com/store/apps") ||
+        u.includes("apps.apple.com") || u.includes("itunes.apple.com")) return 0;
+    if (!u.includes("facebook.com") && !u.includes("fb.com") &&
+        !u.includes("m.me") && !u.includes("messenger.com")) return 1;
+    return 2;
+  }
+
   function extractAdData(adEl) {
     const links = [...adEl.querySelectorAll("a[href]")]
-      .map(a => a.href)
-      .filter(href =>
-        href.startsWith("http") &&
-        !href.includes("facebook.com/ads/") &&
-        !href.includes("l.facebook.com/l.php?u=https%3A%2F%2Fwww.facebook.com")
+      .map(a => unwrapFBRedirect(a.href))          // unwrap BEFORE ranking, so
+      .filter(href =>                              // l.facebook.com wrappers are
+        href.startsWith("http") &&                 // judged on their destination
+        !href.includes("facebook.com/ads/library") &&
+        !href.includes("/ads/archive")
       );
 
+    // Stable sort keeps DOM order within a rank, so the first store link wins.
+    const ranked = links
+      .map((href, i) => ({ href, rank: rankLink(href), i }))
+      .sort((a, b) => a.rank - b.rank || a.i - b.i);
+
     return {
-      landingUrl:     unwrapFBRedirect(links[0] || ""),
+      landingUrl:     ranked[0]?.href || "",
       adText:         adEl.innerText || "",
       claimedAppName: getAppName(adEl),
       advertiserName: getAdvertiserName(adEl, adMarkers.get(adEl)),
@@ -352,6 +407,14 @@
     }
     if (legitimacy === "likely_legitimate") {
       return { cls: "cb-likely", icon: "?", label: "Likely Legitimate" };
+    }
+    // The advertiser's name is in the registry, but the ad links to a social or
+    // messaging page — never a SEC-declared channel, so the name proves
+    // nothing on its own. Ranked above Unverified because we did identify a
+    // registrant worth comparing against, and below Likely Legitimate because
+    // the link itself carries no evidence.
+    if (legitimacy === "name_match_only") {
+      return { cls: "cb-namematch", icon: "≈", label: "Name Match Only" };
     }
     if (status === "no_reference_match" && isStoreUrl) {
       return { cls: "cb-danger", icon: "!", label: "Unregistered App" };
@@ -426,19 +489,32 @@
 
     addRow("", reason);
 
+    // Every channel the registrant actually declared to the SEC. When the ad's
+    // own link could not be verified, these are what the user should compare
+    // against — "this is where the real one lives". Shown for a confirmed ref
+    // and for a fuzzy suggestion alike, but the suggestion is labelled as
+    // unverified so a near-miss is never mistaken for a match.
+    const addDeclaredChannels = (entry) => {
+      if (entry.playUrl)    addRow("Official Play Store", entry.playUrl);
+      if (entry.appleUrl)   addRow("Official App Store", entry.appleUrl);
+      if (entry.websiteUrl) addRow("Official site", entry.websiteUrl);
+    };
+
     if (ref) {
-      addSection("SEC registration");
+      addSection(legitimacy === "name_match_only"
+        ? "Registrant claimed — link not verified"
+        : "SEC registration");
       addRow("SEC No.", ref.sec);
-      if (ref.company)    addRow("Registrant", ref.company);
-      if (ref.appName)    addRow("Registered as", ref.appName);
-      if (ref.websiteUrl) addRow("Official site", ref.websiteUrl);
+      if (ref.company) addRow("Registrant", ref.company);
+      if (ref.appName) addRow("Registered as", ref.appName);
+      addDeclaredChannels(ref);
     }
 
     if (!ref && suggestion) {
       addSection("Possible match — not verified");
       addRow("Company", suggestion.company);
       addRow("SEC No.", suggestion.sec);
-      if (suggestion.websiteUrl) addRow("Official site", suggestion.websiteUrl);
+      addDeclaredChannels(suggestion);
     }
 
     if (riskDesc) {
@@ -648,6 +724,7 @@
       .cb-float-dot.cb-likely     { background: #c58a12; }
       .cb-float-dot.cb-unverified { background: #d1641c; }
       .cb-float-dot.cb-danger     { background: #cc2f38; }
+      .cb-float-dot.cb-namematch  { background: #7a5cd6; }
       .cb-float-text { display: flex; flex-direction: column; min-width: 0; }
       .cb-float-name {
         font-size: 12px; font-weight: 600; color: #e8eaf2;
@@ -679,6 +756,9 @@
       .credibytes-badge.cb-likely     { background:#fdf5e3; border-color:#c58a12; color:#6b4a05; }
       .credibytes-badge.cb-unverified { background:#fdeee2; border-color:#d1641c; color:#7d3708; }
       .credibytes-badge.cb-danger     { background:#fdeaec; border-color:#cc2f38; color:#7d151b; }
+      /* Purple: deliberately not green (not verified) and not red (not an
+         accusation) — a registrant was identified but the link proves nothing. */
+      .credibytes-badge.cb-namematch  { background:#f1edfd; border-color:#7a5cd6; color:#3d2a7a; }
 
       .credibytes-badge .cb-icon {
         width: 18px; height: 18px; flex-shrink: 0; border-radius: 50%;
@@ -689,6 +769,7 @@
       .cb-likely     .cb-icon { background:#c58a12; }
       .cb-unverified .cb-icon { background:#d1641c; }
       .cb-danger     .cb-icon { background:#cc2f38; }
+      .cb-namematch  .cb-icon { background:#7a5cd6; }
 
       .credibytes-badge .cb-label { flex: 1; min-width: 0; }
 
@@ -734,7 +815,7 @@
     adEl.setAttribute(PROCESSED, "1");
 
     const { landingUrl, adText, claimedAppName, advertiserName } = extractAdData(adEl);
-    if (!isOLAAd(adText, landingUrl, advertiserName)) return;
+    if (!isOLAAd(adText, landingUrl, advertiserName, claimedAppName)) return;
 
     const matchResult = window.CrediBytesMatcher.matchUrl(
       landingUrl, claimedAppName, advertiserName

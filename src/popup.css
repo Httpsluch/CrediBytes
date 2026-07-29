@@ -20,11 +20,13 @@
     --amber:  #c58a12;
     --orange: #d1641c;
     --red:    #cc2f38;
+    --violet: #7a5cd6;
 
     --green-bg:  #e7f6ec;
     --amber-bg:  #fdf5e3;
     --orange-bg: #fdeee2;
     --red-bg:    #fdeaec;
+    --violet-bg: #f1edfd;
 
     --radius: 10px;
     --shadow: 0 1px 2px rgba(16,19,34,.06);
@@ -47,6 +49,7 @@
         --amber-bg:  #322709;
         --orange-bg: #35200f;
         --red-bg:    #351319;
+        --violet-bg: #241c3d;
 
         --shadow: 0 1px 2px rgba(0,0,0,.4);
     }
@@ -169,6 +172,7 @@ body {
 .scan-item.likely     { border-left-color: var(--amber); }
 .scan-item.unverified { border-left-color: var(--orange); }
 .scan-item.danger     { border-left-color: var(--red); }
+.scan-item.namematch  { border-left-color: var(--violet); }
 
 .scan-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .scan-badge {
@@ -179,6 +183,9 @@ body {
 .scan-badge.likely     { background: var(--amber-bg);  color: var(--amber); }
 .scan-badge.unverified { background: var(--orange-bg); color: var(--orange); }
 .scan-badge.danger     { background: var(--red-bg);    color: var(--red); }
+/* Violet: not green (unverified) and not red (no accusation) — a registrant
+   was identified, but the link itself proves nothing either way. */
+.scan-badge.namematch  { background: var(--violet-bg); color: var(--violet); }
 
 .scan-time { font-size: 10px; color: var(--text-3); margin-left: auto; flex-shrink: 0; }
 .scan-name {
