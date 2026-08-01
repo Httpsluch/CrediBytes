@@ -225,6 +225,52 @@
     return (el.innerText || "").trim().length > 40;
   }
 
+  // ── Meta Ad Library: a surface with no post containers at all ──────────────
+  //
+  // Measured in the live Ad Library: [role="article"] and [data-pagelet] appear
+  // ZERO times. Every ad there was therefore rooted by isPlausibleAdRoot(),
+  // which returns the FIRST ancestor with a link and 40+ characters — and the
+  // card's header row clears that bar on its own ("ACOM Consumer Finance
+  // Corporation" is 33 characters, plus "Sponsored"). The resulting root held
+  // only the advertiser's Facebook page link, so:
+  //   - the destination was judged to be facebook.com and came back social,
+  //   - the ad body and the destination caption were both out of scope,
+  //   - getAppName() found nothing, so the reason line read "Company name
+  //     matches" rather than naming the app.
+  // That is why four ACOM ads displaying WWW.ACOM.COM.PH — a domain the SEC has
+  // on record — all showed "Name Match Only".
+  //
+  // Each card states its Library ID exactly once; the grid holding every card
+  // states it once per card. So the LOWEST ancestor containing it exactly once
+  // is precisely one card. Walking up from the Sponsored marker in a real card:
+  //
+  //   level  7-11   1282 chars   Library ID: no    <- ad preview, no ID yet
+  //   level 12-13   1388 chars   Library ID: 1     <- the whole card
+  //   level 14      53813 chars  Library ID: many  <- the grid, 49 captions
+  //
+  // Taking the LOWEST match rather than the highest matters: on a single-result
+  // page the grid also contains exactly one Library ID, and preferring the
+  // highest would hand back the entire page.
+  const AD_LIBRARY_PATH = /^\/ads\/library/i;
+  const LIBRARY_ID_TEXT = /Library ID/gi;
+
+  function isAdLibrary() {
+    return AD_LIBRARY_PATH.test(location.pathname);
+  }
+
+  function climbToAdLibraryCard(start) {
+    let el = start;
+    for (let i = 0; i < 20 && el && el !== document.body; i++) {
+      // textContent, not innerText: innerText forces layout, and this runs for
+      // every marker on every scan. The grid subtree is ~54 KB of text.
+      const hits = (el.textContent.match(LIBRARY_ID_TEXT) || []).length;
+      if (hits === 1) return el;
+      if (hits > 1) return null;   // already past the card — let the caller fall back
+      el = el.parentElement;
+    }
+    return null;
+  }
+
   // Climb from the "Sponsored" marker to the real ad container.
   //
   // The old code used span.closest('[role="article"], [data-pagelet], div[class]').
@@ -234,6 +280,16 @@
   // "Sponsored". That element contains no page-name node, which is exactly why
   // the advertiser name came out blank in the feed but fine in search.
   function climbToAdRoot(start) {
+    // Ad Library first, and ONLY there. The news feed keeps the behaviour below
+    // unchanged: its post containers are reliable, and the Library ID anchor
+    // does not exist on that surface anyway.
+    if (isAdLibrary()) {
+      const card = climbToAdLibraryCard(start);
+      if (card) return card;
+      // No Library ID in range (a layout change, or a card still rendering) —
+      // fall through rather than skipping the ad entirely.
+    }
+
     // [role="article"] / [data-pagelet] are genuine post containers, so the
     // nearest one is the right boundary — no size heuristic needed. Taking the
     // NEAREST matters: climbing further can swallow a neighbouring post and

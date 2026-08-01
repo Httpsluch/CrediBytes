@@ -98,11 +98,19 @@ body {
     padding: 13px 15px; display: flex; align-items: center; gap: 11px;
     flex-shrink: 0;
 }
+/* No background or glow: the icon ships with its own transparent artwork, and
+   the red --accent tile behind it showed as a coloured square around the mark.
+   The header sits on --brand-ink, so the transparency reads against that. */
 .header-logo {
-    width: 30px; height: 30px; background: var(--accent);
-    border-radius: 9px; display: flex; align-items: center;
-    justify-content: center; font-size: 15px; flex-shrink: 0;
-    box-shadow: 0 2px 8px rgba(230,57,70,.35);
+    width: 30px; height: 30px;
+    display: flex; align-items: center;
+    justify-content: center; flex-shrink: 0;
+}
+/* contain, not cover: the source is square but this keeps a non-square
+   replacement from being cropped. */
+.header-logo img {
+    width: 100%; height: 100%;
+    object-fit: contain; display: block;
 }
 .header-text { flex: 1; min-width: 0; }
 .header-text h1 { font-size: 14px; font-weight: 700; letter-spacing: .2px; }
