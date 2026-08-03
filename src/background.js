@@ -81,12 +81,18 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // Feed depth. 50 was too shallow to filter against: a session scrolling the
 // Meta Ad Library produced ~400 scans, so the tiles read 22 Unregistered while
-// filtering could only surface the 3 that were still inside the window.
+// filtering could only surface the 3 still inside the window.
 //
-// chrome.storage.local allows ~10 MB and a scan record is well under 1 KB, so
-// 500 is comfortable. Rendering is capped separately (RENDER_LIMIT in
-// popup.js) — the cost is drawing thousands of rows, not storing them.
-const MAX_SCANS = 500;
+// The cap is NOT about the storage quota. chrome.storage.local allows ~10 MB
+// and a scan record measures ~1.3 KB, so quota alone would permit thousands.
+// It exists because appendScan is read-modify-write: the WHOLE array is
+// serialised and rewritten on every single scan, and scans arrive in bursts
+// while scrolling. 2000 records is ~2.6 MB per write, which stays fast; 10000
+// would be ~13 MB per write and would make the serialised queue crawl.
+//
+// Rendering is no longer capped at all — popup.js draws in batches as the feed
+// is scrolled, so nothing stored is unreachable.
+const MAX_SCANS = 2000;
 let scanWriteQueue = Promise.resolve();
 
 // Running totals, kept separately from the feed.

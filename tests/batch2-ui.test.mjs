@@ -126,7 +126,11 @@ const visible = (page) => page.$$eval(".scan-item",
   await page.click('.seg-btn[data-theme="dark"]');
   const darkBg = await bg();
   r.check("dark sets the override", (await attr()) === "dark", String(await attr()));
-  r.check("dark actually repaints", darkBg === "rgb(14, 16, 24)", darkBg);
+  // Pinning an exact hex made this fail on every restyle while testing nothing
+  // about theming. What matters is that forcing dark actually changes the paint
+  // and lands on a dark colour.
+  const darkLum = darkBg.match(/\d+/g)?.slice(0, 3).reduce((a, b) => a + Number(b), 0) ?? 999;
+  r.check("dark actually repaints", darkLum < 200, darkBg);
 
   await page.click('.seg-btn[data-theme="light"]');
   const lightBg = await bg();
@@ -178,7 +182,7 @@ const visible = (page) => page.$$eval(".scan-item",
   await page.waitForTimeout(200);
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   r.check("explicit light overrides an OS dark preference",
-          bg === "rgb(244, 245, 248)", bg);
+          (bg.match(/\d+/g)?.slice(0, 3).reduce((a, b) => a + Number(b), 0) ?? 0) > 600, bg);
   await page.close();
 }
 

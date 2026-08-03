@@ -69,7 +69,7 @@ for (const [w, h] of [[359, 900], [367, 700], [500, 800]]) {
     feedH: Math.round(document.querySelector(".feed").getBoundingClientRect().height),
   }));
   check("popup: NOT flagged as side panel", m.cls === false, String(m.cls));
-  check("popup: fixed 560px height", Math.abs(m.bodyH - 560) <= 2, `bodyH=${m.bodyH}`);
+  check("popup: fixed 600px height", Math.abs(m.bodyH - 600) <= 2, `bodyH=${m.bodyH}`);
   check("popup: feed not collapsed", m.feedH > 150, `feedH=${m.feedH}`);
   await page.close();
 }

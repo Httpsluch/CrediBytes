@@ -74,7 +74,7 @@ for (const [w, h, param, expectPanel] of [
             Math.abs(m.footerBottom - h) <= 2, `footerBottom=${m.footerBottom} vs ${h}`);
   } else {
     r.check(`${label}: popup keeps its fixed height`,
-            Math.abs(m.bodyH - 560) <= 2, `bodyH=${m.bodyH}`);
+            Math.abs(m.bodyH - 600) <= 2, `bodyH=${m.bodyH}`);
   }
   await page.close();
 }

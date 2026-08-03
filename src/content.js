@@ -599,10 +599,10 @@
 
   function verdictOf(legitimacy, status, isStoreUrl) {
     if (legitimacy === "legitimate") {
-      return { cls: "cb-legitimate", icon: "✓", label: "SEC Verified" };
+      return { cls: "cb-legitimate", icon: "✓", label: "SEC Verified", bar: "AD VERIFIED" };
     }
     if (legitimacy === "likely_legitimate") {
-      return { cls: "cb-likely", icon: "?", label: "Likely Legitimate" };
+      return { cls: "cb-likely", icon: "?", label: "Likely Legitimate", bar: "AD LIKELY LEGITIMATE" };
     }
     // The advertiser's name is in the registry, but the ad links to a social or
     // messaging page — never a SEC-declared channel, so the name proves
@@ -610,12 +610,12 @@
     // registrant worth comparing against, and below Likely Legitimate because
     // the link itself carries no evidence.
     if (legitimacy === "name_match_only") {
-      return { cls: "cb-namematch", icon: "≈", label: "Name Match Only" };
+      return { cls: "cb-namematch", icon: "≈", label: "Name Match Only", bar: "AD NAME MATCH ONLY" };
     }
     if (status === "no_reference_match" && isStoreUrl) {
-      return { cls: "cb-danger", icon: "!", label: "Unregistered App" };
+      return { cls: "cb-danger", icon: "!", label: "Unregistered App", bar: "AD UNREGISTERED!" };
     }
-    return { cls: "cb-unverified", icon: "!", label: "Unverified" };
+    return { cls: "cb-unverified", icon: "!", label: "Unverified", bar: "AD UNVERIFIED!" };
   }
 
   // ── Badge injection (createElement — no innerHTML) ───────────────────────────
@@ -632,7 +632,7 @@
     const isApp      = stage1Result?.is_app      ?? null;
     const prob       = stage1Result?.probability ?? null;
 
-    const { cls: badgeClass, icon, label } = verdictOf(legitimacy, status, store);
+    const { cls: badgeClass, icon, label, bar } = verdictOf(legitimacy, status, store);
 
     const badge = document.createElement("div");
     badge.className = BADGE_CLASS + " " + badgeClass;
@@ -644,7 +644,7 @@
 
     const labelSpan = document.createElement("span");
     labelSpan.className = "cb-label";
-    labelSpan.textContent = label;
+    labelSpan.textContent = bar || label;
 
     // A real <button>: focusable, Enter/Space activated, and announced by
     // screen readers. As a <span> it was mouse-only and invisible to a11y.
@@ -686,7 +686,18 @@
       detail.appendChild(h);
     };
 
-    addRow("", reason);
+    // Option A: the ordered record of what the matcher checked. A verdict that
+    // shows its working can be argued with; a bare sentence cannot.
+    const trail = Array.isArray(matchResult.evidence) ? matchResult.evidence : [];
+    if (trail.length) {
+      addSection("How this was checked");
+      for (const e of trail) {
+        const mark = e.state === "pass" ? "✓ " : e.state === "fail" ? "✕ " : "• ";
+        addRow("", mark + e.text);
+      }
+    } else {
+      addRow("", reason);
+    }
 
     // Every channel the registrant actually declared to the SEC. When the ad's
     // own link could not be verified, these are what the user should compare
@@ -736,9 +747,20 @@
                  `exposes no clickable destination.`);
     }
 
+    const contribs = stage1Result?.contributions || [];
     if (riskDesc) {
-      addSection("Profile signal");
+      addSection("Profile signal — supplementary");
       addRow("", riskDesc);
+      // Option B: a bare "23%" invited exactly the wrong reading next to a
+      // green verdict. These say which signal moved it and by how much.
+      for (const c of contribs.slice(0, 3)) {
+        addRow("", `${c.points > 0 ? "+" : ""}${c.points} pts   ${c.label}`);
+      }
+      if (contribs.length) {
+        addRow("", "Points are relative to a typical registrant. This score " +
+                   "describes the advertiser's name profile only — it never " +
+                   "decides the verdict above.");
+      }
     } else if (isApp !== null) {
       // Fallback for older backend responses that don't yet return risk_desc
       addSection("Profile signal");
@@ -897,59 +919,78 @@
     const s = document.createElement("style");
     s.id = "cb-float-styles";
     s.textContent = `
+      /* Floating widget. Matches the popup's card language — surface, rounded
+         corners, coloured left edge per verdict — but has to carry its own
+         palette because it lives in Facebook's page and inherits nothing. */
       #cb-floating {
-        position: fixed; bottom: 80px; right: 16px; width: 264px;
-        background: #101322; color: #e8eaf2;
-        border: 1px solid rgba(255,255,255,.08); border-radius: 14px;
-        box-shadow: 0 12px 32px rgba(0,0,0,.4);
+        position: fixed; bottom: 80px; right: 16px; width: 280px;
+        background: #ffffff; color: #12141c;
+        border: 1px solid #e2e5ec; border-radius: 14px;
+        box-shadow: 0 12px 32px rgba(0,0,0,.22);
         z-index: 2147483000;
         font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
         overflow: hidden; user-select: none;
       }
       #cb-float-header {
         display: flex; align-items: center; gap: 8px;
-        padding: 10px 12px; cursor: grab;
-        background: linear-gradient(180deg, #1a1f38, #151932);
-        border-bottom: 1px solid rgba(255,255,255,.07);
+        padding: 11px 13px; cursor: grab;
+        background: #ffffff; border-bottom: 1px solid #e2e5ec;
       }
       #cb-float-header:active { cursor: grabbing; }
-      .cb-float-title { font-size: 13px; font-weight: 700; letter-spacing: .2px; }
+      .cb-float-title { font-size: 14px; font-weight: 800; letter-spacing: -.2px; }
       .cb-float-count {
-        font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
-        background: rgba(255,255,255,.1); color: #c9cee6;
+        font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 999px;
+        background: #76b729; color: #fff;
       }
       .cb-float-spacer { flex: 1; }
       #cb-float-close {
-        background: none; border: none; color: #8b90a8; cursor: pointer;
+        background: none; border: none; color: #969ba8; cursor: pointer;
         font-size: 19px; line-height: 1; padding: 0 2px; border-radius: 6px;
       }
-      #cb-float-close:hover { color: #ff6b6b; background: rgba(255,107,107,.12); }
-      #cb-float-close:focus-visible { outline: 2px solid #6ea8ff; outline-offset: 2px; }
-      #cb-float-content { padding: 6px; max-height: 232px; overflow-y: auto; }
+      #cb-float-close:hover { color: #d62839; background: #fdeaec; }
+      #cb-float-close:focus-visible { outline: 2px solid #76b729; outline-offset: 2px; }
+      #cb-float-content { padding: 8px; max-height: 260px; overflow-y: auto; }
       .cb-float-empty {
-        padding: 18px 10px; text-align: center; font-size: 12px; color: #767b94;
+        padding: 20px 10px; text-align: center; font-size: 12px; color: #969ba8;
       }
       .cb-float-row {
         display: flex; align-items: center; gap: 9px;
-        padding: 8px 8px; border-radius: 9px;
+        padding: 9px 10px; border-radius: 10px; margin-bottom: 4px;
+        background: #f7f8fa; border-left: 3px solid #969ba8;
       }
-      .cb-float-row:hover { background: rgba(255,255,255,.05); }
+      .cb-float-row.cb-legitimate { border-left-color: #2e9e4f; }
+      .cb-float-row.cb-likely     { border-left-color: #17868c; }
+      .cb-float-row.cb-namematch  { border-left-color: #7a5cd6; }
+      .cb-float-row.cb-unverified { border-left-color: #c98a15; }
+      .cb-float-row.cb-danger     { border-left-color: #d62839; }
       .cb-float-dot {
-        width: 19px; height: 19px; flex-shrink: 0; border-radius: 50%;
+        width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
         font-size: 11px; font-weight: 800; color: #fff;
       }
-      .cb-float-dot.cb-legitimate { background: #1a9c5b; }
-      .cb-float-dot.cb-likely     { background: #c58a12; }
-      .cb-float-dot.cb-unverified { background: #d1641c; }
-      .cb-float-dot.cb-danger     { background: #cc2f38; }
+      .cb-float-dot.cb-legitimate { background: #2e9e4f; }
+      .cb-float-dot.cb-likely     { background: #17868c; }
       .cb-float-dot.cb-namematch  { background: #7a5cd6; }
+      .cb-float-dot.cb-unverified { background: #c98a15; }
+      .cb-float-dot.cb-danger     { background: #d62839; }
       .cb-float-text { display: flex; flex-direction: column; min-width: 0; }
       .cb-float-name {
-        font-size: 12px; font-weight: 600; color: #e8eaf2;
+        font-size: 12.5px; font-weight: 700; color: #12141c;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
-      .cb-float-verdict { font-size: 10.5px; color: #868ca6; margin-top: 1px; }
+      .cb-float-verdict { font-size: 10.5px; color: #5c6270; margin-top: 1px; }
+
+      @media (prefers-color-scheme: dark) {
+        #cb-floating { background: #161922; color: #e9ebf2; border-color: #272c39;
+                       box-shadow: 0 12px 32px rgba(0,0,0,.55); }
+        #cb-float-header { background: #161922; border-bottom-color: #272c39; }
+        .cb-float-row { background: #1b1f2a; }
+        .cb-float-name { color: #e9ebf2; }
+        .cb-float-verdict { color: #9aa0b4; }
+        .cb-float-empty { color: #6b7183; }
+        #cb-float-close:hover { color: #f0616f; background: #351319; }
+        .cb-float-count { background: #8ccf35; color: #10160a; }
+      }
     `;
     document.head.appendChild(s);
   }
@@ -961,69 +1002,81 @@
     const style = document.createElement("style");
     style.id = "credibytes-styles";
     style.textContent = `
+      /* Full-width verdict bar. Solid backgrounds throughout: Facebook's own
+         dark mode would otherwise show through and wreck the contrast, and this
+         element is injected into a page whose CSS we do not control, so nothing
+         may be inherited. */
       .credibytes-badge {
-        display: flex; align-items: center; gap: 8px;
-        padding: 7px 10px; margin: 8px 0; border-radius: 10px;
+        display: flex; align-items: center; gap: 10px;
+        padding: 11px 14px; margin: 8px 0; border-radius: 10px;
         font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-        font-size: 13px; font-weight: 600; line-height: 1.3;
-        border: 1px solid transparent; border-left-width: 3px;
-        position: relative; z-index: 10; box-sizing: border-box;
+        font-size: 14px; font-weight: 800; letter-spacing: .3px; line-height: 1.25;
+        border: none; position: relative; z-index: 10; box-sizing: border-box;
+        color: #fff;
       }
-      /* Solid backgrounds: Facebook's own dark mode would otherwise show
-         through a translucent badge and wreck the contrast. */
-      .credibytes-badge.cb-legitimate { background:#e7f6ec; border-color:#1a9c5b; color:#0f5c36; }
-      .credibytes-badge.cb-likely     { background:#fdf5e3; border-color:#c58a12; color:#6b4a05; }
-      .credibytes-badge.cb-unverified { background:#fdeee2; border-color:#d1641c; color:#7d3708; }
-      .credibytes-badge.cb-danger     { background:#fdeaec; border-color:#cc2f38; color:#7d151b; }
-      /* Purple: deliberately not green (not verified) and not red (not an
+      .credibytes-badge.cb-legitimate { background:#2e9e4f; }
+      .credibytes-badge.cb-likely     { background:#17868c; }
+      .credibytes-badge.cb-unverified { background:#e0aa26; color:#3d2c00; }
+      .credibytes-badge.cb-danger     { background:#d62839; }
+      /* Violet: deliberately not green (not verified) and not red (not an
          accusation) — a registrant was identified but the link proves nothing. */
-      .credibytes-badge.cb-namematch  { background:#f1edfd; border-color:#7a5cd6; color:#3d2a7a; }
+      .credibytes-badge.cb-namematch  { background:#7a5cd6; }
 
       .credibytes-badge .cb-icon {
-        width: 18px; height: 18px; flex-shrink: 0; border-radius: 50%;
+        width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
-        font-size: 11px; font-weight: 800; color: #fff;
+        font-size: 12px; font-weight: 800;
+        background: rgba(255,255,255,.25); color: inherit;
       }
-      .cb-legitimate .cb-icon { background:#1a9c5b; }
-      .cb-likely     .cb-icon { background:#c58a12; }
-      .cb-unverified .cb-icon { background:#d1641c; }
-      .cb-danger     .cb-icon { background:#cc2f38; }
-      .cb-namematch  .cb-icon { background:#7a5cd6; }
+      .credibytes-badge.cb-unverified .cb-icon { background: rgba(0,0,0,.18); }
 
       .credibytes-badge .cb-label { flex: 1; min-width: 0; }
 
       .credibytes-badge .cb-toggle {
-        font: inherit; font-size: 11px; font-weight: 600;
-        padding: 3px 9px; border-radius: 999px; cursor: pointer;
-        background: rgba(0,0,0,.06); border: none; color: inherit;
+        font: inherit; font-size: 11px; font-weight: 800; letter-spacing: .5px;
+        padding: 5px 14px; border-radius: 999px; cursor: pointer;
+        background: rgba(255,255,255,.22); border: none; color: inherit;
         flex-shrink: 0; transition: background .12s;
       }
-      .credibytes-badge .cb-toggle:hover { background: rgba(0,0,0,.12); }
+      .credibytes-badge.cb-unverified .cb-toggle { background: rgba(0,0,0,.14); }
+      .credibytes-badge .cb-toggle:hover { background: rgba(255,255,255,.34); }
+      .credibytes-badge.cb-unverified .cb-toggle:hover { background: rgba(0,0,0,.22); }
       .credibytes-badge .cb-toggle:focus-visible {
-        outline: 2px solid currentColor; outline-offset: 1px;
+        outline: 2px solid currentColor; outline-offset: 2px;
       }
 
+      /* The expanded analysis. Its own light card regardless of the bar colour,
+         so long-form text stays readable. */
       .credibytes-badge .cb-detail {
-        position: absolute; top: calc(100% + 4px); left: 0; right: 0;
-        background: #fff; color: #26282f;
-        border: 1px solid #dfe1e8; border-radius: 10px;
-        padding: 10px 12px; font-size: 12px; font-weight: 400;
-        z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,.16);
-        max-height: 280px; overflow-y: auto;
+        position: absolute; top: calc(100% + 5px); left: 0; right: 0;
+        background: #fff; color: #24262e;
+        border: 1px solid #dfe1e8; border-radius: 12px;
+        padding: 13px 15px; font-size: 12px; font-weight: 400;
+        letter-spacing: 0; z-index: 100; box-shadow: 0 10px 28px rgba(0,0,0,.18);
+        max-height: 320px; overflow-y: auto;
       }
       .credibytes-badge .cb-row {
         display: flex; gap: 8px; padding: 3px 0; line-height: 1.5;
       }
       .credibytes-badge .cb-key {
-        flex-shrink: 0; min-width: 88px; color: #767b8a; font-weight: 600;
+        flex-shrink: 0; min-width: 92px; color: #767b8a; font-weight: 600;
       }
-      .credibytes-badge .cb-val { color: #26282f; word-break: break-word; }
+      .credibytes-badge .cb-val { color: #24262e; word-break: break-word; }
       .credibytes-badge .cb-section {
-        margin-top: 8px; padding-top: 7px; border-top: 1px solid #ebedf2;
-        font-size: 10px; font-weight: 700; text-transform: uppercase;
-        letter-spacing: .5px; color: #969ab0;
+        margin-top: 10px; padding-top: 8px; border-top: 1px solid #ebedf2;
+        font-size: 9.5px; font-weight: 800; text-transform: uppercase;
+        letter-spacing: .7px; color: #969ab0;
       }
-      .credibytes-badge .cb-row:first-child .cb-val { font-weight: 500; }
+      .credibytes-badge .cb-section:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+
+      @media (prefers-color-scheme: dark) {
+        .credibytes-badge .cb-detail {
+          background: #171a24; color: #e9ebf2; border-color: #2b3040;
+        }
+        .credibytes-badge .cb-val { color: #e9ebf2; }
+        .credibytes-badge .cb-key { color: #9aa0b4; }
+        .credibytes-badge .cb-section { border-top-color: #262b38; color: #757b8f; }
+      }
     `;
     document.head.appendChild(style);
   }
@@ -1097,6 +1150,11 @@
         suggestion: suggestion
           ? { company: suggestion.company, sec: suggestion.sec, websiteUrl: suggestion.websiteUrl || "" }
           : null,
+        // What the matcher actually checked, in order, and what each Stage 1
+        // signal was worth. Stored rather than recomputed so a scan opened in
+        // the popup days later shows the reasoning that produced it.
+        evidence: Array.isArray(matchResult.evidence) ? matchResult.evidence : [],
+        contributions: stage1Result?.contributions || [],
       },
     });
   }

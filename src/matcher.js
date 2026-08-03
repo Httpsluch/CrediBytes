@@ -252,9 +252,18 @@
   // ── Main matcher ───────────────────────────────────────────────────────────
 
   function matchUrl(adUrl, claimedAppName = "", claimedCompany = "", fixedAppleUrl = "") {
+    // Running record of what was actually checked, in the order it was checked.
+    // The badge used to state a conclusion and nothing else; this lets it show
+    // its working, so a reader can see which signals were available, which
+    // matched, and which were deliberately skipped. Purely descriptive — nothing
+    // here influences the verdict.
+    const trail = [];
+    const note = (state, text) => { trail.push({ state, text }); };
+
     if (!adUrl) {
+      note("fail", "No destination could be read from this ad.");
       return result("no_url", null, "broken_or_missing_link",
-        "No redirect URL found in this ad.", null);
+        "No redirect URL found in this ad.", null, trail);
     }
 
     const adPlayId  = playPackageId(adUrl);
@@ -262,47 +271,69 @@
     const adHost    = normHost(adUrl);
     const store     = isStoreUrl(adUrl);
 
+    note("info", `Destination: ${adHost || adUrl}`);
+
     // Pass 1 — O(1) exact store ID lookups via Maps
     if (adPlayId) {
       const ref = playIndex.get(adPlayId);
-      if (ref) return result("exact_play_store_package_match", ref, "legitimate",
-        `Play Store package ID matches SEC-registered app: "${ref.appName || ref.company}" (${ref.sec}).`, null);
+      if (ref) {
+        note("pass", `Play package ${adPlayId} is declared by ${ref.company}.`);
+        return result("exact_play_store_package_match", ref, "legitimate",
+          `Play Store package ID matches SEC-registered app: "${ref.appName || ref.company}" (${ref.sec}).`, null, trail);
+      }
+      note("fail", `Play package ${adPlayId} is not in the SEC registry.`);
     }
     if (adAppleId) {
       const ref = appleIndex.get(adAppleId);
-      if (ref) return result("exact_app_store_id_match", ref, "legitimate",
-        `App Store ID matches SEC-registered app: "${ref.appName || ref.company}" (${ref.sec}).`, null);
+      if (ref) {
+        note("pass", `Apple ID ${adAppleId} is declared by ${ref.company}.`);
+        return result("exact_app_store_id_match", ref, "legitimate",
+          `App Store ID matches SEC-registered app: "${ref.appName || ref.company}" (${ref.sec}).`, null, trail);
+      }
+      note("fail", `Apple ID ${adAppleId} is not in the SEC registry.`);
     }
 
     // Store URL with no ID match → definitively unregistered, skip remaining passes
     if (store) {
       const suggestion = findClosestSecEntry(claimedAppName, claimedCompany);
+      note("info",
+        "Name matching skipped: this is a store link, and a company can advertise " +
+        "an undeclared app under its own name.");
       return result("no_reference_match", null, "unverified",
         "This app's package ID or Apple ID has no SEC registration — it may be an undeclared or illegal lending application.",
-        suggestion);
+        suggestion, trail);
     }
 
     // Pass 2 — domain / subdomain match via Map (non-store only)
     if (adHost) {
       // Exact host match
       const ref = domainIndex.get(adHost);
-      if (ref) return result("same_domain_match", ref, "legitimate",
-        `Domain matches SEC-registered website of "${ref.company}" (${ref.sec}).`, null);
+      if (ref) {
+        note("pass", `${adHost} is a SEC-declared website of ${ref.company}.`);
+        return result("same_domain_match", ref, "legitimate",
+          `Domain matches SEC-registered website of "${ref.company}" (${ref.sec}).`, null, trail);
+      }
 
       // Subdomain match: walk up the hostname and check each suffix
       const parts = adHost.split(".");
       for (let i = 1; i < parts.length - 1; i++) {
         const suffix = parts.slice(i).join(".");
         const parentRef = domainIndex.get(suffix);
-        if (parentRef) return result("same_domain_match", parentRef, "legitimate",
-          `Subdomain matches SEC-registered website of "${parentRef.company}" (${parentRef.sec}).`, null);
+        if (parentRef) {
+          note("pass", `${adHost} is a subdomain of ${suffix}, declared by ${parentRef.company}.`);
+          return result("same_domain_match", parentRef, "legitimate",
+            `Subdomain matches SEC-registered website of "${parentRef.company}" (${parentRef.sec}).`, null, trail);
+        }
       }
     }
 
     // Pass 3 — exact normalized name match via Maps (non-store only)
+    if (adHost) note("fail", `${adHost} is not among any registrant's declared websites.`);
+
     const normApp     = normalizeName(claimedAppName);
     const normCompany = normalizeName(claimedCompany);
     const social      = isSocialUrl(adUrl);
+    if (social) note("info", "This destination is a social or messaging page, never a SEC-declared channel.");
 
     // A Facebook page, profile or Messenger thread is never a SEC-declared
     // digital channel, so matching text alone must not verify the ad.
@@ -327,14 +358,16 @@
     // still earned a green "SEC Verified" badge purely because the advertiser
     // typed a registered company's name — the same spoof as the Messenger case
     // but harder to spot.
-    const nameMatchOnly = (ref, what) => result(
+    const nameMatchOnly = (ref, what) => (
+      note("fail", `${what} matches ${ref.company}, but a name is not a declared channel.`),
+      result(
       "name_match_only", ref, "name_match_only",
       `${what} matches SEC-registered "${ref.company}" (${ref.sec}), but this ad links to ` +
       (social
         ? "a social or messaging page, which is not a SEC-declared channel."
         : "a destination that is not among that registrant's SEC-declared channels.") +
       " Verify via the official links below.",
-      null);
+      null, trail));
 
     if (normApp) {
       const candidates = appNameIndex.get(normApp) || [];
@@ -347,9 +380,10 @@
         // "likely legitimate" only when the link is at least a real site rather
         // than a social page.
         if (social) return nameMatchOnly(ref, "App name");
+        note("info", `App name matches ${ref.company}'s entry, but the company name differs.`);
         return result("app_name_match", ref, "likely_legitimate",
           `App name matches SEC registry entry for "${ref.company}" (${ref.sec}), but company name differs ` +
-          `and the link is not a declared channel.`, null);
+          `and the link is not a declared channel.`, null, trail);
       }
     }
 
@@ -363,14 +397,18 @@
     }
 
     // No match — run fuzzy suggestion before returning unverified
+    if (normApp || normCompany) {
+      note("fail", "The advertised name matches no SEC registry entry exactly.");
+    }
     const suggestion = findClosestSecEntry(claimedAppName, claimedCompany);
     return result("no_reference_match", null, "unverified",
-      "No matching SEC-registered OLA found for this ad link.", suggestion);
+      "No matching SEC-registered OLA found for this ad link.", suggestion, trail);
   }
 
   // 5th arg: suggestion — closest SEC entry by name overlap, or null
-  function result(status, ref, legitimacy, reason, suggestion) {
-    return { status, ref, legitimacy, reason, suggestion };
+  // 6th arg: evidence  — ordered record of what was checked (see matchUrl)
+  function result(status, ref, legitimacy, reason, suggestion, evidence) {
+    return { status, ref, legitimacy, reason, suggestion, evidence: evidence || [] };
   }
 
   window.CrediBytesMatcher = { matchUrl, playPackageId, appleAppId, normHost, isStoreUrl, isSocialUrl,

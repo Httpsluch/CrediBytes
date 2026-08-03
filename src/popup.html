@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>CrediBytes</title>
   <!-- Runs before the stylesheet is applied to the body, so the popup/panel
-       sizing class is present at first paint. -->
+       sizing class and the chosen theme are present at first paint. -->
   <script src="panel-init.js"></script>
   <link rel="stylesheet" href="popup.css">
 </head>
@@ -12,16 +12,13 @@
 
   <div class="header">
     <div class="header-logo"><img src="../icons/icon32.png" alt="CrediBytes"></div>
-    <div class="header-text">
-      <h1>CrediBytes</h1>
-      <p>SEC OLA Ad Legitimacy Scanner</p>
-    </div>
+    <h1>CrediBytes</h1>
     <!-- Hidden when already running as the side panel (see popup.js) -->
     <button class="expand-btn" id="expand-btn" type="button"
-            title="Open in side panel" aria-label="Open in side panel">⇥</button>
+            title="Open in side panel" aria-label="Open in side panel">→</button>
   </div>
 
-  <!-- Tabs: real <button>s so they are keyboard reachable -->
+  <!-- Segmented switch. Real <button>s so both halves are keyboard reachable. -->
   <div class="tabs" role="tablist">
     <button class="tab active" data-tab="scans" role="tab"
             aria-selected="true" aria-controls="panel-scans">Scan Results</button>
@@ -29,52 +26,52 @@
             aria-selected="false" aria-controls="panel-settings">Settings</button>
   </div>
 
-  <!-- ── Scan Results Panel ── -->
+  <!-- ── Scan Results ────────────────────────────────────────────────────── -->
   <div class="panel active" id="panel-scans" role="tabpanel">
+
     <!-- Buttons, not divs: filtering is an action, so it must be reachable by
          keyboard and announced. aria-pressed carries the on/off state. -->
     <div class="stats" role="group" aria-label="Filter scans by result">
-      <button class="stat" type="button" data-filter="verified" aria-pressed="false">
-        <span class="stat-num green" id="count-legit">0</span>
+      <button class="stat s-verified" type="button" data-filter="verified" aria-pressed="false">
+        <span class="stat-num" id="count-legit">0</span>
         <span class="stat-label">Verified</span>
       </button>
-      <button class="stat" type="button" data-filter="unverified" aria-pressed="false">
-        <span class="stat-num orange" id="count-unverified">0</span>
+      <button class="stat s-unverified" type="button" data-filter="unverified" aria-pressed="false">
+        <span class="stat-num" id="count-unverified">0</span>
         <span class="stat-label">Unverified</span>
       </button>
-      <button class="stat" type="button" data-filter="unregistered" aria-pressed="false">
-        <span class="stat-num red" id="count-danger">0</span>
+      <button class="stat s-danger" type="button" data-filter="unregistered" aria-pressed="false">
+        <span class="stat-num" id="count-danger">0</span>
         <span class="stat-label">Unregistered</span>
       </button>
-    </div>
-
-    <div class="feed-header">
-      <span>Recent Scans</span>
-      <button class="clear-btn" id="clear-btn">Clear all</button>
     </div>
 
     <div class="feed" id="feed">
       <div class="empty" id="empty-state">
         <div class="empty-icon">🔍</div>
         <div class="empty-title">No ads scanned yet</div>
-        <div class="empty-sub">Browse Facebook and CrediBytes will<br>automatically check OLA ads against<br>the SEC registry.</div>
+        <div class="empty-sub">Browse Facebook and CrediBytes will
+          automatically check OLA ads against the SEC registry.</div>
       </div>
     </div>
+
+    <!-- Clears any active filter and scrolls back to the top. Hidden when the
+         feed is empty or already unfiltered and at the top. -->
+    <button class="see-all" id="see-all" type="button" hidden>See all results</button>
   </div>
 
-  <!-- ── Settings Panel ── -->
+  <!-- ── Settings ────────────────────────────────────────────────────────── -->
   <div class="panel" id="panel-settings" role="tabpanel">
 
     <div class="settings-section">
       <div class="settings-label">Scanning</div>
-      <div class="toggle-row">
-        <div>
-          <div class="toggle-desc">Enable scanning</div>
-          <div class="toggle-sub">Detect and check OLA ads on Facebook</div>
+      <div class="row">
+        <div class="row-text">
+          <div class="row-title">Enable scanning</div>
+          <div class="row-sub">Detect and check OLA ads on Facebook</div>
         </div>
         <label class="switch">
-          <input type="checkbox" id="toggle-scanning" checked
-                 aria-label="Enable scanning">
+          <input type="checkbox" id="toggle-scanning" checked aria-label="Enable scanning">
           <span class="slider"></span>
         </label>
       </div>
@@ -82,27 +79,24 @@
 
     <div class="settings-section">
       <div class="settings-label">Display Mode</div>
-      <div class="radio-group">
-        <label class="radio-row">
+      <div class="mode-group">
+        <label class="mode-row">
           <input type="radio" name="display-mode" value="badge" checked>
-          <div>
-            <div class="radio-title">Inline badge</div>
-            <div class="radio-sub">Adds a verdict label directly above each ad</div>
-          </div>
+          <span class="mode-dot" aria-hidden="true"></span>
+          <span class="mode-name">Inline Badge</span>
+          <span class="mode-desc">Adds a verdict label directly above each ad</span>
         </label>
-        <label class="radio-row">
+        <label class="mode-row">
           <input type="radio" name="display-mode" value="floating">
-          <div>
-            <div class="radio-title">Floating widget</div>
-            <div class="radio-sub">Draggable summary panel on the page</div>
-          </div>
+          <span class="mode-dot" aria-hidden="true"></span>
+          <span class="mode-name">Floating Widget</span>
+          <span class="mode-desc">Draggable summary of the page</span>
         </label>
-        <label class="radio-row">
+        <label class="mode-row">
           <input type="radio" name="display-mode" value="sidepanel">
-          <div>
-            <div class="radio-title">Side panel</div>
-            <div class="radio-sub">Badges on ads plus Chrome's side panel</div>
-          </div>
+          <span class="mode-dot" aria-hidden="true"></span>
+          <span class="mode-name">Side Panel</span>
+          <span class="mode-desc">Badges on ads plus Chrome's side panel</span>
         </label>
       </div>
       <div class="settings-status" id="mode-status" role="status"></div>
@@ -115,29 +109,25 @@
         <button class="seg-btn" type="button" data-theme="dark"   role="radio" aria-checked="false">Dark</button>
         <button class="seg-btn" type="button" data-theme="system" role="radio" aria-checked="true">System</button>
       </div>
-      <div class="radio-sub" style="margin-top:6px">
-        System follows your operating system setting.
-      </div>
+      <div class="row-sub" style="margin-top:7px">System follows your operating system setting.</div>
     </div>
 
     <div class="settings-section">
       <div class="settings-label">Data</div>
-      <div class="toggle-row">
-        <div>
-          <div class="toggle-desc">Clear scan history</div>
-          <div class="toggle-sub">Removes all stored scan records</div>
+      <div class="row">
+        <div class="row-text">
+          <div class="row-title">Clear scan history</div>
+          <div class="row-sub">Removes all stored scan records</div>
         </div>
-        <button class="clear-btn" id="clear-btn-settings">Clear</button>
+        <button class="link-btn" id="clear-btn-settings">CLEAR</button>
       </div>
-      <div class="settings-note" id="ref-note">
-        SEC reference: Philippines OLA Registry
-      </div>
+      <div class="settings-note" id="ref-note">SEC reference: Philippines OLA Registry</div>
     </div>
 
   </div>
 
   <div class="footer">
-    <span>CrediBytes v1.2</span>
+    <span id="app-version">CrediBytes</span>
     <span id="scan-count">0 scans</span>
   </div>
 

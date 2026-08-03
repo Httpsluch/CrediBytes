@@ -93,6 +93,84 @@
     return !!(m && Array.isArray(m.trees) && m.trees.length && Array.isArray(m.features));
   }
 
+  // ── Score attribution ──────────────────────────────────────────────────────
+  //
+  // A bare "Profile score: 23%" is not an explanation, and it invites exactly
+  // the wrong reading. A MegaPeso ad that Stage 2 had verified outright by Apple
+  // ID showed 23%, which looked like the extension contradicting itself; the
+  // real cause was that its registrant had no website on record, and that single
+  // feature is worth ~55 points to this model.
+  //
+  // Each contribution is measured by ABLATION: recompute the probability with
+  // one feature moved to its dataset-typical value and report the difference.
+  // The result is exact for the question asked ("what is this feature worth
+  // HERE, holding the rest fixed") and needs no extra data at inference — it is
+  // 7 extra passes over 100 depth-3 trees, which is nothing.
+  //
+  // This is not TreeSHAP. Contributions do not sum to the prediction and are not
+  // claimed to; they are a per-feature sensitivity, which is what a reader of
+  // the badge actually wants to know.
+  //
+  // Baselines are the training set's median for continuous features and its mode
+  // for the binary ones (dataset_output/ph_ola_model_ready.csv, n=186).
+  const BASELINE = {
+    platform_name_length:      9,
+    company_name_length:       31,
+    platform_has_loan_keyword: 0,
+    platform_has_cash_keyword: 0,
+    platform_has_peso_keyword: 0,
+    platform_has_url:          0,
+    has_official_website:      1,
+  };
+
+  // Plain-language names. The badge is read by people checking a loan advert,
+  // not by anyone who knows what "platform_has_peso_keyword" means.
+  const FEATURE_LABEL = {
+    platform_name_length:      "app name length",
+    company_name_length:       "advertiser name length",
+    platform_has_loan_keyword: "“loan” in the app name",
+    platform_has_cash_keyword: "“cash” in the app name",
+    platform_has_peso_keyword: "“peso” in the app name",
+    platform_has_url:          "a web address in the app name",
+    has_official_website:      "known official website",
+  };
+
+  function scoreProbability(values) {
+    const model = window.CrediBytesStage1Model;
+    let raw = 0;
+    for (const tree of model.trees) raw += walk(tree, values);
+    return sigmoid(raw);
+  }
+
+  /**
+   * Per-feature contributions, largest absolute effect first.
+   * @returns [{ feature, label, value, points }] where `points` is the
+   *          percentage-point change this feature's actual value causes
+   *          relative to a typical registrant. Empty if the model is missing.
+   */
+  function explain(companyName, platformName, hasOfficialWebsite) {
+    if (!isReady()) return [];
+
+    const model = window.CrediBytesStage1Model;
+    const named = buildFeatures(companyName, platformName, hasOfficialWebsite);
+    const values = model.features.map(f => named[f]);
+    const base   = scoreProbability(values);
+
+    const out = [];
+    model.features.forEach((f, i) => {
+      if (!(f in BASELINE)) return;
+      if (named[f] === BASELINE[f]) return;          // already typical, no story
+      const swapped = values.slice();
+      swapped[i] = BASELINE[f];
+      const points = Math.round((base - scoreProbability(swapped)) * 100);
+      if (points !== 0) {
+        out.push({ feature: f, label: FEATURE_LABEL[f] || f, value: named[f], points });
+      }
+    });
+
+    return out.sort((a, b) => Math.abs(b.points) - Math.abs(a.points));
+  }
+
   /**
    * @returns the same shape the backend's /predict returns, so callers cannot
    *          tell the two apart, or null if the model is unavailable.
@@ -106,10 +184,7 @@
     // Positional vector, ordered by the model's own feature list.
     const values = model.features.map(f => named[f]);
 
-    let raw = 0;
-    for (const tree of model.trees) raw += walk(tree, values);
-
-    const probability = sigmoid(raw);
+    const probability = scoreProbability(values);
     const [label, desc] = riskLabel(probability);
 
     return {
@@ -120,8 +195,11 @@
       risk_desc:   desc,
       company:     String(companyName || ""),
       source:      "local",     // "remote" when the backend answered instead
+      // Why the score is what it is — see explain(). The backend does not
+      // return this, so content.js computes it locally either way.
+      contributions: explain(companyName, platformName, hasOfficialWebsite),
     };
   }
 
-  window.CrediBytesStage1 = { predict, isReady, buildFeatures, riskLabel };
+  window.CrediBytesStage1 = { predict, isReady, buildFeatures, riskLabel, explain };
 })();

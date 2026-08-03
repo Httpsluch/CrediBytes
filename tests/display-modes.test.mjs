@@ -28,6 +28,7 @@ const snap = () => page.evaluate(() => ({
   toggleTag: document.querySelector(".credibytes-badge .cb-toggle")?.tagName || null,
   ariaExpanded: document.querySelector(".credibytes-badge .cb-toggle")?.getAttribute("aria-expanded") ?? null,
   scans: window.__store.scans.length,
+  saved: window.__store.scans[0] || null,
   processed: document.querySelectorAll("[credibytes-processed]").length,
 }));
 
@@ -46,7 +47,8 @@ const check = (name, cond, detail) => { results.push({ name, pass: !!cond, detai
 
 let s = await snap();
 check("badge mode: badge injected", s.badges === 1, JSON.stringify(s));
-check("badge mode: verdict is Unregistered App", s.badgeLabel === "Unregistered App", s.badgeLabel);
+check("badge mode: bar reads AD UNREGISTERED!", /UNREGISTERED/.test(s.badgeLabel || ""), s.badgeLabel);
+check("badge mode: stored label stays canonical", s.saved?.label === "Unregistered App", s.saved?.label);
 check("badge mode: no floating widget", s.floating === false, "");
 check("badge mode: scan saved", s.scans === 1, "scans=" + s.scans);
 check("a11y: toggle is a real BUTTON", s.toggleTag === "BUTTON", s.toggleTag);
