@@ -29,7 +29,36 @@
   const settings = {
     scanningEnabled: true,
     displayMode: "badge",
+    // "system" | "light" | "dark". The injected UI CANNOT use
+    // prefers-color-scheme alone: that follows the operating system, so picking
+    // Light in Settings left the badge detail and the floating widget dark on a
+    // dark OS. The popup solves this with a data-theme attribute on <html>, but
+    // <html> here belongs to Facebook, so the resolved theme is stamped onto
+    // each injected root instead (see applyTheme).
+    theme: "system",
   };
+
+  // Stamped on every injected root. Mirrors the popup's two-selector approach:
+  // cb-dark forces dark, cb-light forces light, and neither leaves the
+  // prefers-color-scheme media query in charge.
+  function themeClass() {
+    return settings.theme === "dark"  ? "cb-dark"
+         : settings.theme === "light" ? "cb-light" : "";
+  }
+
+  function applyThemeTo(node) {
+    if (!node) return;
+    node.classList.remove("cb-dark", "cb-light");
+    const c = themeClass();
+    if (c) node.classList.add(c);
+  }
+
+  // Re-stamp everything already on the page when the choice changes, so the
+  // switch is immediate rather than applying only to ads scanned afterwards.
+  function refreshTheme() {
+    document.querySelectorAll("." + BADGE_CLASS).forEach(applyThemeTo);
+    applyThemeTo(document.getElementById("cb-floating"));
+  }
 
   // ── Extension-context guards ────────────────────────────────────────────────
   // Reloading, updating, or disabling the extension orphans the content scripts
@@ -558,6 +587,23 @@
     const localResult = () =>
       window.CrediBytesStage1?.predict(advertiserName, appName, hasOfficialWebsite) ?? null;
 
+    // The backend's /predict returns only the score, so a remotely-served ad
+    // arrived with no breakdown and the badge showed the explanatory note above
+    // an empty list. Attribution is computed here instead of being added to the
+    // API: the bundled model is a bit-for-bit copy of the deployed one
+    // (verify_export.py asserts it), so the same inputs give the same
+    // contributions either way, and this costs no round trip.
+    const withContributions = (result) => {
+      if (!result || (Array.isArray(result.contributions) && result.contributions.length)) {
+        return result;
+      }
+      return {
+        ...result,
+        contributions:
+          window.CrediBytesStage1?.explain(advertiserName, appName, hasOfficialWebsite) ?? [],
+      };
+    };
+
     // No point waiting on the network if the context is already gone.
     if (!extensionAlive()) return Promise.resolve(localResult());
 
@@ -583,7 +629,7 @@
           const remote = response?.prediction;
           // A null here means unreachable, cold, or context torn down — fall
           // back rather than dropping the profile score entirely.
-          finish(remote || localResult());
+          finish(remote ? withContributions(remote) : localResult());
         }
       );
 
@@ -636,6 +682,7 @@
 
     const badge = document.createElement("div");
     badge.className = BADGE_CLASS + " " + badgeClass;
+    applyThemeTo(badge);
     badge.setAttribute("role", "status");
 
     const iconSpan = document.createElement("span");
@@ -798,6 +845,7 @@
 
     const widget = document.createElement("div");
     widget.id = "cb-floating";
+    applyThemeTo(widget);
 
     const header = document.createElement("div");
     header.id = "cb-float-header";
@@ -919,45 +967,78 @@
     const s = document.createElement("style");
     s.id = "cb-float-styles";
     s.textContent = `
-      /* Floating widget. Matches the popup's card language — surface, rounded
-         corners, coloured left edge per verdict — but has to carry its own
-         palette because it lives in Facebook's page and inherits nothing. */
+      /* Floating widget. Matches the popup's card language, but has to carry
+         its own palette because it lives in Facebook's page and inherits
+         nothing. Same three-state theming as the badge: forced light, forced
+         dark, or follow the OS. */
+      #cb-floating {
+        --f-bg: #ffffff; --f-fg: #12141c; --f-border: #e2e5ec;
+        --f-row: #f7f8fa; --f-sub: #5c6270; --f-mute: #969ba8;
+        --f-chip-bg: #76b729; --f-chip-fg: #ffffff;
+        --f-close-bg: #fdeaec; --f-close-fg: #d62839;
+        --f-shadow: rgba(0,0,0,.22);
+      }
+      @media (prefers-color-scheme: dark) {
+        #cb-floating:not(.cb-light) {
+          --f-bg: #161922; --f-fg: #e9ebf2; --f-border: #272c39;
+          --f-row: #1b1f2a; --f-sub: #9aa0b4; --f-mute: #6b7183;
+          --f-chip-bg: #8ccf35; --f-chip-fg: #10160a;
+          --f-close-bg: #351319; --f-close-fg: #f0616f;
+          --f-shadow: rgba(0,0,0,.55);
+        }
+      }
+      #cb-floating.cb-dark {
+        --f-bg: #161922; --f-fg: #e9ebf2; --f-border: #272c39;
+        --f-row: #1b1f2a; --f-sub: #9aa0b4; --f-mute: #6b7183;
+        --f-chip-bg: #8ccf35; --f-chip-fg: #10160a;
+        --f-close-bg: #351319; --f-close-fg: #f0616f;
+        --f-shadow: rgba(0,0,0,.55);
+      }
+
       #cb-floating {
         position: fixed; bottom: 80px; right: 16px; width: 280px;
-        background: #ffffff; color: #12141c;
-        border: 1px solid #e2e5ec; border-radius: 14px;
-        box-shadow: 0 12px 32px rgba(0,0,0,.22);
+        background: var(--f-bg); color: var(--f-fg);
+        border: 1px solid var(--f-border); border-radius: 14px;
+        box-shadow: 0 12px 32px var(--f-shadow);
         z-index: 2147483000;
         font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
         overflow: hidden; user-select: none;
+        animation: cb-pop .18s ease-out;
       }
       #cb-float-header {
         display: flex; align-items: center; gap: 8px;
         padding: 11px 13px; cursor: grab;
-        background: #ffffff; border-bottom: 1px solid #e2e5ec;
+        background: var(--f-bg); border-bottom: 1px solid var(--f-border);
       }
       #cb-float-header:active { cursor: grabbing; }
       .cb-float-title { font-size: 14px; font-weight: 800; letter-spacing: -.2px; }
       .cb-float-count {
         font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 999px;
-        background: #76b729; color: #fff;
+        background: var(--f-chip-bg); color: var(--f-chip-fg);
+        transition: background .18s ease;
       }
       .cb-float-spacer { flex: 1; }
       #cb-float-close {
-        background: none; border: none; color: #969ba8; cursor: pointer;
+        background: none; border: none; color: var(--f-mute); cursor: pointer;
         font-size: 19px; line-height: 1; padding: 0 2px; border-radius: 6px;
+        transition: color .16s ease, background .16s ease, transform .16s ease;
       }
-      #cb-float-close:hover { color: #d62839; background: #fdeaec; }
+      #cb-float-close:hover {
+        color: var(--f-close-fg); background: var(--f-close-bg); transform: rotate(90deg);
+      }
+      #cb-float-close:active { transform: rotate(90deg) scale(.9); }
       #cb-float-close:focus-visible { outline: 2px solid #76b729; outline-offset: 2px; }
       #cb-float-content { padding: 8px; max-height: 260px; overflow-y: auto; }
       .cb-float-empty {
-        padding: 20px 10px; text-align: center; font-size: 12px; color: #969ba8;
+        padding: 20px 10px; text-align: center; font-size: 12px; color: var(--f-mute);
       }
       .cb-float-row {
         display: flex; align-items: center; gap: 9px;
         padding: 9px 10px; border-radius: 10px; margin-bottom: 4px;
-        background: #f7f8fa; border-left: 3px solid #969ba8;
+        background: var(--f-row); border-left: 3px solid var(--f-mute);
+        transition: transform .14s ease, box-shadow .14s ease;
       }
+      .cb-float-row:hover { transform: translateX(2px); box-shadow: 0 2px 8px var(--f-shadow); }
       .cb-float-row.cb-legitimate { border-left-color: #2e9e4f; }
       .cb-float-row.cb-likely     { border-left-color: #17868c; }
       .cb-float-row.cb-namematch  { border-left-color: #7a5cd6; }
@@ -975,22 +1056,10 @@
       .cb-float-dot.cb-danger     { background: #d62839; }
       .cb-float-text { display: flex; flex-direction: column; min-width: 0; }
       .cb-float-name {
-        font-size: 12.5px; font-weight: 700; color: #12141c;
+        font-size: 12.5px; font-weight: 700; color: var(--f-fg);
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
-      .cb-float-verdict { font-size: 10.5px; color: #5c6270; margin-top: 1px; }
-
-      @media (prefers-color-scheme: dark) {
-        #cb-floating { background: #161922; color: #e9ebf2; border-color: #272c39;
-                       box-shadow: 0 12px 32px rgba(0,0,0,.55); }
-        #cb-float-header { background: #161922; border-bottom-color: #272c39; }
-        .cb-float-row { background: #1b1f2a; }
-        .cb-float-name { color: #e9ebf2; }
-        .cb-float-verdict { color: #9aa0b4; }
-        .cb-float-empty { color: #6b7183; }
-        #cb-float-close:hover { color: #f0616f; background: #351319; }
-        .cb-float-count { background: #8ccf35; color: #10160a; }
-      }
+      .cb-float-verdict { font-size: 10.5px; color: var(--f-sub); margin-top: 1px; }
     `;
     document.head.appendChild(s);
   }
@@ -1002,6 +1071,13 @@
     const style = document.createElement("style");
     style.id = "credibytes-styles";
     style.textContent = `
+      /* Injected UI shares one entrance animation. Kept short — this appears
+         over someone's feed, so it should register without delaying anything. */
+      @keyframes cb-pop {
+        from { opacity: 0; transform: translateY(-4px) scale(.985); }
+        to   { opacity: 1; transform: none; }
+      }
+
       /* Full-width verdict bar. Solid backgrounds throughout: Facebook's own
          dark mode would otherwise show through and wreck the contrast, and this
          element is injected into a page whose CSS we do not control, so nothing
@@ -1013,7 +1089,10 @@
         font-size: 14px; font-weight: 800; letter-spacing: .3px; line-height: 1.25;
         border: none; position: relative; z-index: 10; box-sizing: border-box;
         color: #fff;
+        animation: cb-pop .2s ease-out;
+        transition: box-shadow .18s ease, transform .18s ease;
       }
+      .credibytes-badge:hover { box-shadow: 0 3px 12px rgba(0,0,0,.18); }
       .credibytes-badge.cb-legitimate { background:#2e9e4f; }
       .credibytes-badge.cb-likely     { background:#17868c; }
       .credibytes-badge.cb-unverified { background:#e0aa26; color:#3d2c00; }
@@ -1036,8 +1115,10 @@
         font: inherit; font-size: 11px; font-weight: 800; letter-spacing: .5px;
         padding: 5px 14px; border-radius: 999px; cursor: pointer;
         background: rgba(255,255,255,.22); border: none; color: inherit;
-        flex-shrink: 0; transition: background .12s;
+        flex-shrink: 0;
+        transition: background .16s ease, transform .16s ease;
       }
+      .credibytes-badge .cb-toggle:active { transform: scale(.94); }
       .credibytes-badge.cb-unverified .cb-toggle { background: rgba(0,0,0,.14); }
       .credibytes-badge .cb-toggle:hover { background: rgba(255,255,255,.34); }
       .credibytes-badge.cb-unverified .cb-toggle:hover { background: rgba(0,0,0,.22); }
@@ -1045,37 +1126,56 @@
         outline: 2px solid currentColor; outline-offset: 2px;
       }
 
-      /* The expanded analysis. Its own light card regardless of the bar colour,
-         so long-form text stays readable. */
+      /* The expanded analysis. Its own card regardless of the bar colour, so
+         long-form text stays readable.
+
+         The palette is held in custom properties on the badge root so the
+         light/dark swap happens in ONE place. Three states, mirroring the
+         popup: forced light (.cb-light), forced dark (.cb-dark), and neither —
+         which leaves prefers-color-scheme in charge. An explicit choice must
+         win in both directions, which a bare media query cannot do. */
+      .credibytes-badge {
+        --d-bg: #ffffff; --d-fg: #24262e; --d-border: #dfe1e8;
+        --d-key: #767b8a; --d-sec: #969ab0; --d-line: #ebedf2;
+      }
+      @media (prefers-color-scheme: dark) {
+        .credibytes-badge:not(.cb-light) {
+          --d-bg: #171a24; --d-fg: #e9ebf2; --d-border: #2b3040;
+          --d-key: #9aa0b4; --d-sec: #757b8f; --d-line: #262b38;
+        }
+      }
+      .credibytes-badge.cb-dark {
+        --d-bg: #171a24; --d-fg: #e9ebf2; --d-border: #2b3040;
+        --d-key: #9aa0b4; --d-sec: #757b8f; --d-line: #262b38;
+      }
+
       .credibytes-badge .cb-detail {
         position: absolute; top: calc(100% + 5px); left: 0; right: 0;
-        background: #fff; color: #24262e;
-        border: 1px solid #dfe1e8; border-radius: 12px;
+        background: var(--d-bg); color: var(--d-fg);
+        border: 1px solid var(--d-border); border-radius: 12px;
         padding: 13px 15px; font-size: 12px; font-weight: 400;
         letter-spacing: 0; z-index: 100; box-shadow: 0 10px 28px rgba(0,0,0,.18);
         max-height: 320px; overflow-y: auto;
+        animation: cb-pop .16s ease-out;
       }
       .credibytes-badge .cb-row {
         display: flex; gap: 8px; padding: 3px 0; line-height: 1.5;
       }
       .credibytes-badge .cb-key {
-        flex-shrink: 0; min-width: 92px; color: #767b8a; font-weight: 600;
+        flex-shrink: 0; min-width: 92px; color: var(--d-key); font-weight: 600;
       }
-      .credibytes-badge .cb-val { color: #24262e; word-break: break-word; }
+      .credibytes-badge .cb-val { color: var(--d-fg); word-break: break-word; }
       .credibytes-badge .cb-section {
-        margin-top: 10px; padding-top: 8px; border-top: 1px solid #ebedf2;
+        margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--d-line);
         font-size: 9.5px; font-weight: 800; text-transform: uppercase;
-        letter-spacing: .7px; color: #969ab0;
+        letter-spacing: .7px; color: var(--d-sec);
       }
       .credibytes-badge .cb-section:first-child { margin-top: 0; padding-top: 0; border-top: none; }
 
-      @media (prefers-color-scheme: dark) {
-        .credibytes-badge .cb-detail {
-          background: #171a24; color: #e9ebf2; border-color: #2b3040;
+      @media (prefers-reduced-motion: reduce) {
+        .credibytes-badge, .credibytes-badge *, #cb-floating, #cb-floating * {
+          animation: none !important; transition: none !important;
         }
-        .credibytes-badge .cb-val { color: #e9ebf2; }
-        .credibytes-badge .cb-key { color: #9aa0b4; }
-        .credibytes-badge .cb-section { border-top-color: #262b38; color: #757b8f; }
       }
     `;
     document.head.appendChild(style);
@@ -1228,6 +1328,7 @@
     safeStorageGet(["settings", "floatingOpen"], (data) => {
       settings.scanningEnabled = data.settings?.scanningEnabled !== false;
       settings.displayMode     = data.settings?.displayMode || "badge";
+      settings.theme           = data.settings?.theme || "system";
 
       if (settings.scanningEnabled && settings.displayMode === "floating") {
         injectFloatingStyles();
@@ -1255,8 +1356,13 @@
         const prevMode     = settings.displayMode;
         const prevScanning = settings.scanningEnabled;
 
+        const prevTheme = settings.theme;
+
         settings.scanningEnabled = next.scanningEnabled !== false;
         settings.displayMode     = next.displayMode || "badge";
+        settings.theme           = next.theme || "system";
+
+        if (settings.theme !== prevTheme) refreshTheme();
 
         if (settings.displayMode !== prevMode ||
             settings.scanningEnabled !== prevScanning) {

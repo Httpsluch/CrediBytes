@@ -170,5 +170,63 @@ const browser = await chromium.launch({ headless: true });
   await page.close();
 }
 
+// ── A backend-served score must carry a breakdown too ────────────────────────
+// The backend's /predict returns only the score. A remotely-served ad therefore
+// rendered the explanatory note above an EMPTY list — reported from a live
+// EZLoan scan. content.js now attributes locally whichever source answered.
+{
+  const page = await browser.newPage();
+  await page.route("**/*", route =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }));
+  await page.goto("https://www.facebook.com/");
+  await page.setContent(`
+    <div role="article">
+      <a role="link" href="https://www.facebook.com/x/"><strong><span>EZLoan</span></strong></a>
+      <span>Sponsored</span>
+      <div>Cash loan online with fast approval, no collateral loan needed.</div>
+      <a href="https://play.google.com/store/apps/details?id=com.sploan.tech.ezloan">Install</a>
+    </div>`);
+
+  // Shim answers PREDICT the way the real backend does: no contributions field.
+  await page.addScriptTag({ content: `
+    window.__sent = []; window.__listeners = [];
+    window.__store = { settings: { scanningEnabled: true, displayMode: "badge" }, scans: [] };
+    window.chrome = {
+      storage: { local: {
+        get(k, cb) { const ks = typeof k === "string" ? [k] : (Array.isArray(k) ? k : Object.keys(k || {}));
+                     const o = {}; ks.forEach(x => { if (x in window.__store) o[x] = window.__store[x]; }); cb && cb(o); },
+        set(o, cb) { Object.assign(window.__store, o); cb && cb(); } },
+        onChanged: { addListener(fn) { window.__listeners.push(fn); } } },
+      runtime: { id: "t", lastError: null, sendMessage(m, cb) {
+        window.__sent.push(m);
+        if (m.type === "PREDICT") {
+          cb && cb({ ok: true, prediction: { is_app: false, probability: 0.23, pct: 23,
+            risk_label: "Low", risk_desc: "Profile score: 23%.", company: "EZLoan", source: "remote" } });
+          return;
+        }
+        cb && cb({ ok: true });
+      } },
+      tabs: { query: (q, cb) => cb([]) },
+      sidePanel: { open() {}, setOptions() { return Promise.resolve(); } },
+    };` });
+  for (const f of ["sec_reference.js", "stage1_model.js", "matcher.js", "stage1.js", "content.js"]) {
+    await page.addScriptTag({ content: await read(f) });
+  }
+  await page.waitForTimeout(3400);
+
+  const saved = await page.evaluate(() =>
+    window.__sent.find(m => m.type === "SAVE_SCAN")?.payload || null);
+
+  r.check("remote score is used", saved?.prob === 0.23, String(saved?.prob));
+  r.check("verdict still from Stage 2", saved?.label === "SEC Verified", saved?.label);
+  r.check("backend-served scan still gets a breakdown",
+          Array.isArray(saved?.contributions) && saved.contributions.length > 0,
+          JSON.stringify(saved?.contributions));
+  r.check("and it names the missing website",
+          saved?.contributions?.some(c => c.feature === "has_official_website"),
+          JSON.stringify(saved?.contributions?.map(c => c.feature)));
+  await page.close();
+}
+
 await browser.close();
 process.exit(r.finish() ? 1 : 0);
