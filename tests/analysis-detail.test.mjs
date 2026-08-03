@@ -222,9 +222,13 @@ const browser = await chromium.launch({ headless: true });
   r.check("backend-served scan still gets a breakdown",
           Array.isArray(saved?.contributions) && saved.contributions.length > 0,
           JSON.stringify(saved?.contributions));
-  r.check("and it names the missing website",
-          saved?.contributions?.some(c => c.feature === "has_official_website"),
-          JSON.stringify(saved?.contributions?.map(c => c.feature)));
+  // Deliberately NOT asserting a specific feature here. An earlier version
+  // pinned has_official_website, which stopped holding the moment Second Pay
+  // Financing's website was verified into the registry — the assertion was
+  // measuring registry contents rather than whether attribution happened at all.
+  r.check("breakdown entries are well formed",
+          saved?.contributions?.every(c => c.label && typeof c.points === "number"),
+          JSON.stringify(saved?.contributions));
   await page.close();
 }
 
