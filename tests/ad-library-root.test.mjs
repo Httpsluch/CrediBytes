@@ -88,11 +88,17 @@ const ACOM = {
 //    holds 49 captions in the live DOM, so a root that overshoots would let one
 //    card's destination verify another's.
 {
+  // The package here is deliberately SYNTHETIC. An earlier version used a real
+  // undeclared app (com.pesohere.fastcash) and the suite broke the day PesoHere
+  // was verified into the registry — the assertion was measuring registry
+  // contents, not the thing under test. What this case actually checks is that
+  // four cards in one grid are judged independently, so the fixture must not
+  // depend on any particular row of sec_reference.js.
   const undeclared = {
-    advertiser: "Fint hubnet developers",
-    page: "https://www.facebook.com/pesohere/",
+    advertiser: "Quick Peso Lending Express",
+    page: "https://www.facebook.com/quickpesoexpress/",
     body: "Cash loan online with fast approval! Borrow money instantly, no collateral loan needed.",
-    dest: "https://play.google.com/store/apps/details?id=com.pesohere.fastcash",
+    dest: "https://play.google.com/store/apps/details?id=com.example.notinthesecregistry",
     caption: "PLAY.GOOGLE.COM",
   };
   const { payloads } = await scanAt(LIBRARY_URL, `<div id="grid">
