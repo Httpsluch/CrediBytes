@@ -19,6 +19,12 @@
   const BADGE_CLASS = "credibytes-badge";
   const PROCESSED   = "credibytes-processed";
 
+  // Ad elements whose scan has already been recorded. Separate from the
+  // PROCESSED attribute on purpose: PROCESSED is cleared whenever the badges
+  // need rebuilding (display mode, theme, language), whereas a scan is recorded
+  // once per ad for the lifetime of that DOM node. See saveScan's call site.
+  const savedAds = new WeakSet();
+
   // ── Live settings ───────────────────────────────────────────────────────────
   // Settings are cached here and kept in sync by a storage.onChanged listener.
   //
@@ -1262,7 +1268,21 @@
 
     // The scan is always recorded, whatever the display mode — history in the
     // popup must not depend on which surface the user happens to be viewing.
-    saveScan(matchResult, stage1Result, advertiserName, landingUrl);
+    //
+    // Once per ad ELEMENT, though, not once per render. Changing the display
+    // mode, theme or language calls applySettings(), which clears the PROCESSED
+    // marks and rescans so the badges are rebuilt — and every rebuilt ad used to
+    // send another SAVE_SCAN. Measured: one ad, three settings changes, three
+    // saved scans. background.js increments cumulative totals per save, so
+    // flipping a setting inflated the tiles and duplicated the feed.
+    //
+    // savedAds is deliberately NOT cleared by applySettings(): re-rendering an
+    // ad is not a new observation of it. Being a WeakSet, an entry disappears
+    // when Facebook recycles the node, so a genuinely new ad still records.
+    if (!savedAds.has(adEl)) {
+      savedAds.add(adEl);
+      saveScan(matchResult, stage1Result, advertiserName, landingUrl);
+    }
 
     // Badge is the on-page surface for both "badge" and "sidepanel" modes;
     // sidepanel additionally mirrors the history in Chrome's panel.

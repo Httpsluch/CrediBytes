@@ -270,5 +270,86 @@ const browser = await chromium.launch({ headless: true });
   await page.close();
 }
 
+// ── Switching language re-renders, but must not re-RECORD ───────────────────
+//
+// Changing the language calls applySettings(), which clears the PROCESSED marks
+// and rescans so the badges are rebuilt in the new language. That is by design —
+// badge DOM is built once per ad and never touched again, so unlike the theme
+// (a class swap) the nodes have to be recreated.
+//
+// The hazard is that a rescan used to send another SAVE_SCAN for every visible
+// ad. background.js increments cumulative totals per save, so flipping a setting
+// inflated the tiles and duplicated the feed. Measured before the fix: one ad,
+// three settings changes, three saved scans.
+//
+// This predates the language work — display mode already used the same path —
+// which is why the display-mode case is asserted here too.
+{
+  const page = await browser.newPage();
+  await page.route("**/*", route =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }));
+  await page.goto("https://www.facebook.com/");
+  await page.setContent(`
+    <div role="article">
+      <a role="link" href="https://www.facebook.com/x/"><strong><span>JuanHand</span></strong></a>
+      <span>Sponsored</span><div>Cash loan online, fast approval.</div>
+      <a href="https://play.google.com/store/apps/details?id=com.juanhand.fast.cash.peso.loan.app">Install</a>
+    </div>`);
+  await page.addScriptTag({ content:
+    `window.__sent=[];window.__listeners=[];
+     window.__store={settings:{scanningEnabled:true,displayMode:"badge",lang:"en"},scans:[]};
+     window.chrome={storage:{local:{
+       get(k,cb){const ks=typeof k==="string"?[k]:(Array.isArray(k)?k:Object.keys(k||{}));
+         const o={};ks.forEach(x=>{if(x in window.__store)o[x]=window.__store[x];});cb&&cb(o);},
+       set(o,cb){Object.assign(window.__store,o);cb&&cb();}},
+       onChanged:{addListener(fn){window.__listeners.push(fn);}}},
+       runtime:{id:"t",lastError:null,sendMessage(m,cb){window.__sent.push(m);cb&&cb({ok:true});}},
+       tabs:{query:(q,cb)=>cb([])},sidePanel:{open(){},setOptions(){return Promise.resolve();}}};` });
+  for (const f of ["i18n.js", "sec_reference.js", "revoked_reference.js",
+                   "stage1_model.js", "matcher.js", "stage1.js", "content.js"])
+    await page.addScriptTag({ content: await read(f) });
+  await page.waitForTimeout(3400);
+
+  const saves = () => page.evaluate(() =>
+    window.__sent.filter(m => m.type === "SAVE_SCAN").length);
+  const flip = async (next) => {
+    await page.evaluate((s) => {
+      window.__store.settings = s;
+      window.__listeners.forEach(fn => fn({ settings: { newValue: s } }, "local"));
+    }, next);
+    await page.waitForTimeout(3400);
+  };
+
+  r.check("one ad records one scan", (await saves()) === 1, String(await saves()));
+
+  await flip({ scanningEnabled: true, displayMode: "badge", lang: "tl" });
+  r.check("switching language does not record it again", (await saves()) === 1,
+          String(await saves()));
+  const barTl = await page.evaluate(() => document.querySelector(".cb-label")?.textContent);
+  r.check("but the badge IS rebuilt in the new language", /VERIFIED ANG AD/.test(barTl || ""),
+          String(barTl));
+
+  await flip({ scanningEnabled: true, displayMode: "badge", lang: "en" });
+  r.check("switching back does not record it again", (await saves()) === 1,
+          String(await saves()));
+
+  await flip({ scanningEnabled: true, displayMode: "floating", lang: "en" });
+  r.check("changing display mode does not record it again", (await saves()) === 1,
+          String(await saves()));
+
+  // The mark must not suppress a genuinely new ad.
+  await page.evaluate(() => {
+    const d = document.createElement("div");
+    d.setAttribute("role", "article");
+    d.innerHTML = `<a role="link" href="https://www.facebook.com/y/"><strong><span>Loan Online</span></strong></a>
+      <span>Sponsored</span><div>Cash loan online fast approval</div>
+      <a href="https://loanonline.ph/apply">Apply</a>`;
+    document.body.appendChild(d);
+  });
+  await page.waitForTimeout(3400);
+  r.check("a genuinely new ad still records", (await saves()) === 2, String(await saves()));
+  await page.close();
+}
+
 await browser.close();
 process.exit(r.finish() ? 1 : 0);
