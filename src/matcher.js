@@ -128,13 +128,19 @@
   // through a declared URL, so the revocation attaches to a registrant the ad
   // already proved it belongs to.
 
+  // Codes map to translation KEYS; the wording lives in i18n.js.
+  // Translation shim. i18n.js loads before this file in the manifest; the guard
+  // exists because a matcher that throws would take the whole verdict with it,
+  // and an untranslated key on screen is far better than no badge at all.
+  const T = (key, params, lang) => {
+    const I = window.CrediBytesI18n;
+    return I ? I.t(key, params, lang) : key;
+  };
+
+  // Codes map to translation KEYS; the wording lives in i18n.js.
   const REVOKED_CATEGORY = {
-    RL: "Certificate of Authority to operate as a lending company was revoked",
-    RF: "Certificate of Authority to operate as a financing company was revoked",
-    SL: "Certificate of Authority to operate as a lending company was suspended",
-    RP: "Certificate of Registration (primary licence) was revoked",
-    RT: "Partnership registration was revoked",
-    CD: "A cease and desist order was issued",
+    RL: "revoked.RL", RF: "revoked.RF", SL: "revoked.SL",
+    RP: "revoked.RP", RT: "revoked.RT", CD: "revoked.CD",
   };
 
   // Map<normalisedName, entry>. Mirrors normalise() in build_revoked_reference.py
@@ -168,9 +174,28 @@
     return revokedIndex.get(key) || null;
   }
 
-  function revokedWording(entry) {
-    const what = REVOKED_CATEGORY[entry.c] || "A SEC registration was revoked";
-    return entry.d ? `${what} on ${entry.d}.` : `${what}.`;
+  // Company names on the SEC list frequently end in an abbreviation ("Corp.",
+  // "Inc."), and every template that interpolates one also ends the sentence —
+  // which rendered "declared by Wefund Lending Corp.." on a live badge.
+  function nm(company) {
+    return String(company || "").replace(/\.\s*$/, "");
+  }
+
+  // Returns a DESCRIPTOR, not a sentence: { key, params } that i18n resolves at
+  // render time. Baking the wording in here would freeze the clause in whichever
+  // language was active when the scan was saved.
+  function revokedDescriptor(entry) {
+    return {
+      key: entry.d ? "revoked.on" : "revoked.noDate",
+      params: { what: { key: REVOKED_CATEGORY[entry.c] || "revoked.fallback" },
+                date: entry.d },
+    };
+  }
+
+  // Convenience for callers that want it rendered now (badge detail rows).
+  function revokedWording(entry, lang) {
+    const d = revokedDescriptor(entry);
+    return T(d.key, d.params, lang);
   }
 
   // ── Fuzzy suggestion (token overlap ≥ 40%) ────────────────────────────────
@@ -332,16 +357,17 @@
     // so it may change the badge.
     if (out.ref && out.ref.revoked && out.legitimacy === "legitimate") {
       const e = out.ref.revoked;
-      trail.push({ state: "fail",
-        text: `${out.ref.company} appears on the SEC's revoked list. ${revokedWording(e)}` });
+      const pA = { company: nm(out.ref.company), status: revokedDescriptor(e) };
+      trail.push({ state: "fail", key: "ev.revokedVerdict", params: pA,
+                   text: T("ev.revokedVerdict", pA) });
+      const rp = { company: out.ref.company, sec: out.ref.sec, status: revokedDescriptor(e) };
       return {
         ...out,
         legitimacy: "revoked",
         status: "registrant_revoked",
         revoked: { ...e, company: out.ref.company, verdict: true },
-        reason:
-          `This ad links to a channel declared by "${out.ref.company}" (${out.ref.sec}), ` +
-          `but that registrant appears on the SEC's revoked list. ${revokedWording(e)}`,
+        reasonKey: "reason.revoked", reasonParams: rp,
+        reason: T("reason.revoked", rp),
       };
     }
 
@@ -350,9 +376,9 @@
     // and the verdict is returned exactly as the matcher decided it.
     const advisory = lookupRevoked(claimedCompany) || lookupRevoked(claimedAppName);
     if (advisory && !(out.ref && out.ref.revoked)) {
-      trail.push({ state: "info",
-        text: `An entity named "${advisory.n}" appears on the SEC's revoked list. ` +
-              `${revokedWording(advisory)} This ad has not been shown to belong to it.` });
+      const pB = { name: advisory.n, status: revokedDescriptor(advisory) };
+      trail.push({ state: "info", key: "ev.revokedAdvisory", params: pB,
+                   text: T("ev.revokedAdvisory", pB) });
       return { ...out, revoked: { ...advisory, verdict: false } };
     }
 
@@ -366,12 +392,18 @@
     // matched, and which were deliberately skipped. Purely descriptive — nothing
     // here influences the verdict.
     const trail = [];
-    const note = (state, text) => { trail.push({ state, text }); };
+    // Entries carry a KEY and PARAMS, not a sentence. `text` is rendered
+    // alongside them so existing readers keep working, but content.js and
+    // popup.js re-render from key+params at display time — which is what lets a
+    // scan recorded months ago read in whatever language is selected now.
+    const note = (state, key, params) => {
+      trail.push({ state, key, params: params || null, text: T(key, params) });
+    };
 
     if (!adUrl) {
-      note("fail", "No destination could be read from this ad.");
+      note("fail", "ev.noDestination");
       return result("no_url", null, "broken_or_missing_link",
-        "No redirect URL found in this ad.", null, trail);
+        "reason.noUrl", null, null, trail);
     }
 
     const adPlayId  = playPackageId(adUrl);
@@ -379,37 +411,34 @@
     const adHost    = normHost(adUrl);
     const store     = isStoreUrl(adUrl);
 
-    note("info", `Destination: ${adHost || adUrl}`);
+    note("info", "ev.destination", { host: adHost || adUrl });
 
     // Pass 1 — O(1) exact store ID lookups via Maps
     if (adPlayId) {
       const ref = playIndex.get(adPlayId);
       if (ref) {
-        note("pass", `Play package ${adPlayId} is declared by ${ref.company}.`);
+        note("pass", "ev.playDeclared", { pkg: adPlayId, company: nm(ref.company) });
         return result("exact_play_store_package_match", ref, "legitimate",
-          `Play Store package ID matches SEC-registered app: "${ref.appName || ref.company}" (${ref.sec}).`, null, trail);
+          "reason.playMatch", { app: ref.appName || ref.company, sec: ref.sec }, null, trail);
       }
-      note("fail", `Play package ${adPlayId} is not in the SEC registry.`);
+      note("fail", "ev.playNotFound", { pkg: adPlayId });
     }
     if (adAppleId) {
       const ref = appleIndex.get(adAppleId);
       if (ref) {
-        note("pass", `Apple ID ${adAppleId} is declared by ${ref.company}.`);
+        note("pass", "ev.appleDeclared", { id: adAppleId, company: nm(ref.company) });
         return result("exact_app_store_id_match", ref, "legitimate",
-          `App Store ID matches SEC-registered app: "${ref.appName || ref.company}" (${ref.sec}).`, null, trail);
+          "reason.appleMatch", { app: ref.appName || ref.company, sec: ref.sec }, null, trail);
       }
-      note("fail", `Apple ID ${adAppleId} is not in the SEC registry.`);
+      note("fail", "ev.appleNotFound", { id: adAppleId });
     }
 
     // Store URL with no ID match → definitively unregistered, skip remaining passes
     if (store) {
       const suggestion = findClosestSecEntry(claimedAppName, claimedCompany);
-      note("info",
-        "Name matching skipped: this is a store link, and a company can advertise " +
-        "an undeclared app under its own name.");
+      note("info", "ev.storeSkipName");
       return result("no_reference_match", null, "unverified",
-        "This app's package ID or Apple ID has no SEC registration — it may be an undeclared or illegal lending application.",
-        suggestion, trail);
+        "reason.storeNoMatch", null, suggestion, trail);
     }
 
     // Pass 2 — domain / subdomain match via Map (non-store only)
@@ -417,9 +446,9 @@
       // Exact host match
       const ref = domainIndex.get(adHost);
       if (ref) {
-        note("pass", `${adHost} is a SEC-declared website of ${ref.company}.`);
+        note("pass", "ev.websiteDeclared", { host: adHost, company: nm(ref.company) });
         return result("same_domain_match", ref, "legitimate",
-          `Domain matches SEC-registered website of "${ref.company}" (${ref.sec}).`, null, trail);
+          "reason.domainMatch", { company: ref.company, sec: ref.sec }, null, trail);
       }
 
       // Subdomain match: walk up the hostname and check each suffix
@@ -428,20 +457,21 @@
         const suffix = parts.slice(i).join(".");
         const parentRef = domainIndex.get(suffix);
         if (parentRef) {
-          note("pass", `${adHost} is a subdomain of ${suffix}, declared by ${parentRef.company}.`);
+          note("pass", "ev.subdomainDeclared",
+               { host: adHost, suffix, company: nm(parentRef.company) });
           return result("same_domain_match", parentRef, "legitimate",
-            `Subdomain matches SEC-registered website of "${parentRef.company}" (${parentRef.sec}).`, null, trail);
+            "reason.subdomainMatch", { company: parentRef.company, sec: parentRef.sec }, null, trail);
         }
       }
     }
 
     // Pass 3 — exact normalized name match via Maps (non-store only)
-    if (adHost) note("fail", `${adHost} is not among any registrant's declared websites.`);
+    if (adHost) note("fail", "ev.hostNotDeclared", { host: adHost });
 
     const normApp     = normalizeName(claimedAppName);
     const normCompany = normalizeName(claimedCompany);
     const social      = isSocialUrl(adUrl);
-    if (social) note("info", "This destination is a social or messaging page, never a SEC-declared channel.");
+    if (social) note("info", "ev.socialDestination");
 
     // A Facebook page, profile or Messenger thread is never a SEC-declared
     // digital channel, so matching text alone must not verify the ad.
@@ -466,32 +496,31 @@
     // still earned a green "SEC Verified" badge purely because the advertiser
     // typed a registered company's name — the same spoof as the Messenger case
     // but harder to spot.
-    const nameMatchOnly = (ref, what) => (
-      note("fail", `${what} matches ${ref.company}, but a name is not a declared channel.`),
+    // `whatKey` names WHICH text matched, and is itself translated — the phrase
+    // is a grammatical subject in both languages, so it cannot be concatenated.
+    const nameMatchOnly = (ref, whatKey) => (
+      note("fail", "ev.nameNotChannel", { what: T(whatKey), company: nm(ref.company) }),
       result(
-      "name_match_only", ref, "name_match_only",
-      `${what} matches SEC-registered "${ref.company}" (${ref.sec}), but this ad links to ` +
-      (social
-        ? "a social or messaging page, which is not a SEC-declared channel."
-        : "a destination that is not among that registrant's SEC-declared channels.") +
-      " Verify via the official links below.",
-      null, trail));
+        "name_match_only", ref, "name_match_only",
+        "reason.nameMatchOnly",
+        { what: T(whatKey), company: ref.company, sec: ref.sec,
+          dest: T(social ? "dest.social" : "dest.other") },
+        null, trail));
 
     if (normApp) {
       const candidates = appNameIndex.get(normApp) || [];
       for (const ref of candidates) {
         const refCompany = normalizeName(ref.company);
         if (normCompany && refCompany && normCompany === refCompany) {
-          return nameMatchOnly(ref, "App and company name");
+          return nameMatchOnly(ref, "what.appAndCompany");
         }
         // App name matches but the company differs — weaker still, and kept as
         // "likely legitimate" only when the link is at least a real site rather
         // than a social page.
-        if (social) return nameMatchOnly(ref, "App name");
-        note("info", `App name matches ${ref.company}'s entry, but the company name differs.`);
+        if (social) return nameMatchOnly(ref, "what.appName");
+        note("info", "ev.appNameCompanyDiffers", { company: nm(ref.company) });
         return result("app_name_match", ref, "likely_legitimate",
-          `App name matches SEC registry entry for "${ref.company}" (${ref.sec}), but company name differs ` +
-          `and the link is not a declared channel.`, null, trail);
+          "reason.appNameMatch", { company: ref.company, sec: ref.sec }, null, trail);
       }
     }
 
@@ -499,24 +528,33 @@
       const candidates = companyIndex.get(normCompany) || [];
       for (const ref of candidates) {
         if (!normalizeName(ref.appName)) {
-          return nameMatchOnly(ref, "Company name");
+          return nameMatchOnly(ref, "what.companyName");
         }
       }
     }
 
     // No match — run fuzzy suggestion before returning unverified
     if (normApp || normCompany) {
-      note("fail", "The advertised name matches no SEC registry entry exactly.");
+      note("fail", "ev.nameNoMatch");
     }
     const suggestion = findClosestSecEntry(claimedAppName, claimedCompany);
     return result("no_reference_match", null, "unverified",
-      "No matching SEC-registered OLA found for this ad link.", suggestion, trail);
+      "reason.noMatch", null, suggestion, trail);
   }
 
-  // 5th arg: suggestion — closest SEC entry by name overlap, or null
-  // 6th arg: evidence  — ordered record of what was checked (see matchUrl)
-  function result(status, ref, legitimacy, reason, suggestion, evidence) {
-    return { status, ref, legitimacy, reason, suggestion, evidence: evidence || [] };
+  // 4th/5th args: reasonKey + reasonParams — a translation key and its
+  //   substitutions, NOT a sentence. `reason` is rendered from them so existing
+  //   readers keep working, while content.js and popup.js re-render at display
+  //   time in whatever language is selected.
+  // 6th arg: suggestion — closest SEC entry by name overlap, or null
+  // 7th arg: evidence   — ordered record of what was checked (see matchUrl)
+  function result(status, ref, legitimacy, reasonKey, reasonParams, suggestion, evidence) {
+    return {
+      status, ref, legitimacy,
+      reasonKey, reasonParams: reasonParams || null,
+      reason: T(reasonKey, reasonParams),
+      suggestion, evidence: evidence || [],
+    };
   }
 
   window.CrediBytesMatcher = { matchUrl, playPackageId, appleAppId, normHost, isStoreUrl, isSocialUrl,

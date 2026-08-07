@@ -13,12 +13,14 @@
 // so the badge, the tiles and the cards cannot drift apart again.
 
 const TIERS = {
-  legitimate: { cls: "legitimate", mark: "✓", label: "Verified" },
-  likely:     { cls: "likely",     mark: "?", label: "Likely" },
-  namematch:  { cls: "namematch",  mark: "≈", label: "Name only" },
-  danger:     { cls: "danger",     mark: "!", label: "Unregistered" },
-  unverified: { cls: "unverified", mark: "⚠", label: "Unverified" },
-  revoked:    { cls: "revoked",    mark: "⊘", label: "Authority revoked" },
+  // `labelKey` rather than a literal: the module loads once, but the language can
+  // change while the popup is open, so the text has to be resolved at render.
+  legitimate: { cls: "legitimate", mark: "✓", labelKey: "ui.tierVerified" },
+  likely:     { cls: "likely",     mark: "?", labelKey: "ui.tierLikely" },
+  namematch:  { cls: "namematch",  mark: "≈", labelKey: "ui.tierNamematch" },
+  danger:     { cls: "danger",     mark: "!", labelKey: "ui.tierDanger" },
+  unverified: { cls: "unverified", mark: "⚠", labelKey: "ui.tierUnverified" },
+  revoked:    { cls: "revoked",    mark: "⊘", labelKey: "ui.tierRevoked" },
 };
 
 // One shape, derived from TIERS. This literal was written out four separate
@@ -111,11 +113,11 @@ function el(tag, cls, text) {
 // show time passing, which is the whole reason it updates.
 function timeAgo(ts) {
   const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-  if (s < 5)     return "just now";
-  if (s < 60)    return `${s}s ago`;
-  if (s < 3600)  return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
+  if (s < 5)     return T("time.justNow");
+  if (s < 60)    return T("time.sec",  { n: s });
+  if (s < 3600)  return T("time.min",  { n: Math.floor(s / 60) });
+  if (s < 86400) return T("time.hour", { n: Math.floor(s / 3600) });
+  return T("time.day", { n: Math.floor(s / 86400) });
 }
 
 /**
@@ -158,24 +160,24 @@ function buildDetail(scan) {
 
   // A — what was actually checked, in order.
   if (Array.isArray(scan.evidence) && scan.evidence.length) {
-    d.appendChild(el("p", "detail-h", "How this was checked"));
+    d.appendChild(el("p", "detail-h", T("sec.howChecked")));
     const ul = el("ul", "ev-list");
     for (const e of scan.evidence) {
       const li = el("li", `ev-item ev-${e.state || "info"}`);
       li.appendChild(el("span", "ev-icon",
         e.state === "pass" ? "✓" : e.state === "fail" ? "✕" : "•"));
-      li.appendChild(el("span", null, e.text));
+      li.appendChild(el("span", null, TE(e)));
       ul.appendChild(li);
     }
     d.appendChild(ul);
   } else if (scan.reason) {
-    d.appendChild(el("p", "detail-h", "Result"));
+    d.appendChild(el("p", "detail-h", T("ui.detailResult")));
     d.appendChild(el("div", "contrib-note", scan.reason));
   }
 
   // The registrant this ad resolved to, if any.
   if (scan.company || scan.sec || scan.officialUrl) {
-    d.appendChild(el("p", "detail-h", "SEC registrant"));
+    d.appendChild(el("p", "detail-h", T("ui.detailRegistrant")));
     const dl = el("dl", "kv");
     const put = (k, v, link) => {
       if (!v) return;
@@ -189,9 +191,9 @@ function buildDetail(scan) {
       } else dd.textContent = v;
       dl.appendChild(dd);
     };
-    put("Company", scan.company);
-    put("SEC No.", scan.sec);
-    put("Official site", scan.officialUrl, true);
+    put(T("row.company"), scan.company);
+    put(T("row.secNo"), scan.sec);
+    put(T("row.officialSite"), scan.officialUrl, true);
     d.appendChild(dl);
   }
 
@@ -201,30 +203,24 @@ function buildDetail(scan) {
   // would start reading as a finding.
   if (scan.revoked) {
     const rv = scan.revoked;
-    d.appendChild(el("p", "detail-h", rv.verdict
-      ? "SEC revoked list"
-      : "Name appears on the SEC revoked list"));
+    d.appendChild(el("p", "detail-h",
+      T(rv.verdict ? "sec.revokedList" : "sec.revokedNameOnly")));
     const dl = el("dl", "kv");
-    if (rv.n) { dl.appendChild(el("dt", null, "Listed as")); dl.appendChild(el("dd", null, rv.n)); }
-    if (rv.d) { dl.appendChild(el("dt", null, "Date"));      dl.appendChild(el("dd", null, rv.d)); }
+    if (rv.n) { dl.appendChild(el("dt", null, T("row.listedAs"))); dl.appendChild(el("dd", null, rv.n)); }
+    if (rv.d) { dl.appendChild(el("dt", null, T("row.date")));      dl.appendChild(el("dd", null, rv.d)); }
     d.appendChild(dl);
-    d.appendChild(el("div", "contrib-note", rv.verdict
-      ? "The link in this ad is genuine and belongs to this registrant. What " +
-        "changed is the registrant's standing: the SEC has withdrawn the " +
-        "authority under which it operated."
-      : "This is a name match only. Nothing links this advertisement to that " +
-        "entity, and different companies can share a name — treat it as a " +
-        "reason to verify, not as a conclusion about this advertiser."));
+    d.appendChild(el("div", "contrib-note",
+      T(rv.verdict ? "note.revokedVerdict" : "note.revokedAdvisory")));
   }
 
   // A fuzzy name suggestion is NEVER a verification — labelled as such.
   if (!scan.sec && scan.suggestion && scan.suggestion.company) {
-    d.appendChild(el("p", "detail-h", "Closest registry entry — not a match"));
+    d.appendChild(el("p", "detail-h", T("ui.detailClosest")));
     const dl = el("dl", "kv");
-    dl.appendChild(el("dt", null, "Company"));
+    dl.appendChild(el("dt", null, T("row.company")));
     dl.appendChild(el("dd", null, scan.suggestion.company));
     if (scan.suggestion.sec) {
-      dl.appendChild(el("dt", null, "SEC No."));
+      dl.appendChild(el("dt", null, T("row.secNo")));
       dl.appendChild(el("dd", null, scan.suggestion.sec));
     }
     d.appendChild(dl);
@@ -232,13 +228,14 @@ function buildDetail(scan) {
 
   // B — why the profile score is what it is.
   if (scan.prob != null) {
-    d.appendChild(el("p", "detail-h", "Profile signal — supplementary"));
+    d.appendChild(el("p", "detail-h", T("sec.profileSignalSupp")));
     if (Array.isArray(scan.contributions) && scan.contributions.length) {
       const box = el("div", "contrib");
       for (const c of scan.contributions.slice(0, 4)) {
         const row = el("div", `contrib-row ${c.points >= 0 ? "contrib-pos" : "contrib-neg"}`);
         row.appendChild(el("span", "contrib-pts", `${c.points > 0 ? "+" : ""}${c.points}`));
-        row.appendChild(el("span", "contrib-label", c.label));
+        row.appendChild(el("span", "contrib-label",
+          c.labelKey ? T(c.labelKey, c.labelParams) : c.label));
         box.appendChild(row);
       }
       d.appendChild(box);
@@ -256,9 +253,11 @@ function buildDetail(scan) {
 
 function buildCard(scan) {
   const tier = tierOf(scan);
-  const T = TIERS[tier];
+  // Renamed from T: a module-level T() is now the translate helper, and a
+  // local shadow would silently break any translation added inside here.
+  const tierInfo = TIERS[tier];
 
-  const item = el("div", `scan-item ${T.cls}`);
+  const item = el("div", `scan-item ${tierInfo.cls}`);
   item.tabIndex = 0;
   item.setAttribute("role", "button");
   item.setAttribute("aria-expanded", "false");
@@ -285,11 +284,11 @@ function buildCard(scan) {
   // Gauge when a profile score exists, verdict mark when it does not.
   const side = el("div", "scan-side");
   if (scan.prob != null) {
-    side.appendChild(buildGauge(Math.round(scan.prob * 100), T.cls));
-    side.appendChild(el("span", "gauge-cap", "Profile"));
+    side.appendChild(buildGauge(Math.round(scan.prob * 100), tierInfo.cls));
+    side.appendChild(el("span", "gauge-cap", T("ui.profileCap")));
   } else {
-    side.appendChild(el("div", "scan-mark", T.mark));
-    side.appendChild(el("span", "scan-mark-label", T.label));
+    side.appendChild(el("div", "scan-mark", tierInfo.mark));
+    side.appendChild(el("span", "scan-mark-label", T(tierInfo.labelKey)));
   }
   head.appendChild(side);
   item.appendChild(head);
@@ -342,7 +341,7 @@ function renderScans(scans) {
 
   feed.querySelectorAll(".scan-item, .filter-empty, .feed-sentinel").forEach(n => n.remove());
 
-  count.textContent = `${lastScans.length} scan${lastScans.length === 1 ? "" : "s"}`;
+  count.textContent = T("ui.scans", { n: lastScans.length });
 
   if (!lastScans.length) {
     empty.style.display = "block";
@@ -422,6 +421,58 @@ document.querySelectorAll(".seg-btn[data-theme]").forEach(btn => {
   btn.addEventListener("click", () => setTheme(btn.dataset.theme));
 });
 
+// ── Language ─────────────────────────────────────────────────────────────────
+// Same shape as the theme, and mirrored into localStorage for the same reason:
+// panel-init.js applies it before first paint, so the popup never renders in
+// English and then rewrites itself.
+//
+// Storing it in `settings` is what makes the choice reach the badges too —
+// content.js watches storage.onChanged and rebuilds them.
+
+const I18N = window.CrediBytesI18n;
+const T = (key, params) => (I18N ? I18N.t(key, params) : key);
+const TE = (entry) => (I18N ? I18N.render(entry) : (entry && entry.text) || "");
+
+/** Replace the text of every [data-i18n] element from the current language. */
+function translateStatic() {
+  if (!I18N) return;
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    el.textContent = I18N.t(el.dataset.i18n);
+  });
+  const exp = document.getElementById("expand-btn");
+  if (exp) {
+    exp.title = I18N.t("ui.openSidePanel");
+    exp.setAttribute("aria-label", I18N.t("ui.openSidePanel"));
+  }
+}
+
+function applyLang(lang) {
+  if (!I18N || !I18N.has(lang)) lang = I18N ? I18N.DEFAULT_LANG : "en";
+  I18N && I18N.setLang(lang);
+  document.documentElement.lang = lang;
+  document.querySelectorAll(".seg-btn[data-lang]").forEach(btn => {
+    btn.setAttribute("aria-checked", String(btn.dataset.lang === lang));
+  });
+  translateStatic();
+  // The feed is built from stored key+params, so re-rendering re-translates
+  // every card — including scans recorded before the language was changed.
+  renderScans(lastScans);
+}
+
+function setLang(lang) {
+  applyLang(lang);
+  try { localStorage.setItem("cb-lang", lang); } catch (_e) { /* private mode */ }
+  chrome.storage.local.get("settings", (data) => {
+    const s = data.settings || {};
+    s.lang = lang;
+    chrome.storage.local.set({ settings: s });
+  });
+}
+
+document.querySelectorAll(".seg-btn[data-lang]").forEach(btn => {
+  btn.addEventListener("click", () => setLang(btn.dataset.lang));
+});
+
 // ── Clear ─────────────────────────────────────────────────────────────────────
 // Routes through background.js, the single writer, to avoid racing live scans.
 
@@ -457,6 +508,9 @@ function loadSettings() {
     // Reconcile with what panel-init.js applied from the localStorage mirror;
     // storage wins if the two ever diverge.
     applyTheme(THEMES.includes(s.theme) ? s.theme : "system");
+    // Same reconciliation as the theme: panel-init.js already applied the
+    // localStorage mirror pre-paint, storage wins if they diverge.
+    applyLang(s.lang || (I18N ? I18N.DEFAULT_LANG : "en"));
     const mode = s.displayMode || "badge";
     const radio = document.querySelector(`input[name="display-mode"][value="${mode}"]`);
     if (radio) radio.checked = true;

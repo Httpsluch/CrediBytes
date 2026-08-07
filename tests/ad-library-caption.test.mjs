@@ -20,6 +20,7 @@ async function scan(html) {
   const page = await browser.newPage();
   await page.setContent(`<!doctype html><body>${html}</body>`);
   await page.addScriptTag({ content: CHROME_SHIM });
+  await page.addScriptTag({ content: await read("i18n.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("stage1_model.js") });
   await page.addScriptTag({ content: await read("matcher.js") });

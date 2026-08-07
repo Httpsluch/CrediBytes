@@ -28,6 +28,7 @@ async function scanAt(url, html) {
   await page.goto(url);
   await page.setContent(html);                 // keeps the URL, replaces the DOM
   await page.addScriptTag({ content: CHROME_SHIM });
+  await page.addScriptTag({ content: await read("i18n.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("stage1_model.js") });
   await page.addScriptTag({ content: await read("matcher.js") });

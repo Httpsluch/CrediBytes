@@ -25,6 +25,7 @@ const browser = await chromium.launch({ headless: true });
   await page.route("**/*", route =>
     route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }));
   await page.goto("https://www.facebook.com/");
+  await page.addScriptTag({ content: await read("i18n.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("matcher.js") });
 
@@ -68,6 +69,9 @@ const browser = await chromium.launch({ headless: true });
   await page.route("**/*", route =>
     route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }));
   await page.goto("https://www.facebook.com/");
+  // stage1.js resolves its contribution labels through i18n, so the string
+  // table has to be present or every label comes back as a bare key.
+  await page.addScriptTag({ content: await read("i18n.js") });
   await page.addScriptTag({ content: await read("stage1_model.js") });
   await page.addScriptTag({ content: await read("stage1.js") });
 
@@ -278,7 +282,7 @@ const browser = await chromium.launch({ headless: true });
       tabs: { query: (q, cb) => cb([]) },
       sidePanel: { open() {}, setOptions() { return Promise.resolve(); } },
     };` });
-  for (const f of ["sec_reference.js", "stage1_model.js", "matcher.js", "stage1.js", "content.js"]) {
+  for (const f of ["i18n.js", "sec_reference.js", "stage1_model.js", "matcher.js", "stage1.js", "content.js"]) {
     await page.addScriptTag({ content: await read(f) });
   }
   await page.waitForTimeout(3400);

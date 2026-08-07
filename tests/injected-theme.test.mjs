@@ -60,7 +60,7 @@ async function scanWithTheme(theme, osScheme = "light") {
       sidePanel: { open() {}, setOptions() { return Promise.resolve(); } },
     };` });
 
-  for (const f of ["sec_reference.js", "stage1_model.js", "matcher.js", "stage1.js", "content.js"]) {
+  for (const f of ["i18n.js", "sec_reference.js", "stage1_model.js", "matcher.js", "stage1.js", "content.js"]) {
     await page.addScriptTag({ content: await read(f) });
   }
   await page.waitForTimeout(3400);        // exceeds BACKEND_WAIT_MS

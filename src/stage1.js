@@ -185,24 +185,33 @@
   // Reported from a live badge (WealthKites, Pinansyal na Tagapayo): two of the
   // four rows on each card stated the reverse of the truth. `value` was already
   // being computed and returned by explain(); it was simply never used.
+  // Feature -> translation key, chosen by the VALUE. The wording lives in
+  // i18n.js so the breakdown reads in the user's language; the mapping stays
+  // here because only this file knows what each value means.
   const FEATURE_LABEL = {
-    platform_name_length:      v => `app name length (${v} chars)`,
-    company_name_length:       v => `advertiser name length (${v} chars)`,
-    platform_has_loan_keyword: v => v ? "“loan” in the app name"
-                                      : "no “loan” in the app name",
-    platform_has_cash_keyword: v => v ? "“cash” in the app name"
-                                      : "no “cash” in the app name",
-    platform_has_url:          v => v ? "a web address in the app name"
-                                      : "no web address in the app name",
-    platform_name_is_single_word: v => v ? "app name is a single word"
-                                         : "app name is several words",
-    has_official_website:      v => v ? "known official website"
-                                      : "no official website on record",
+    platform_name_length:      () => "feat.appNameLength",
+    company_name_length:       () => "feat.advertiserNameLength",
+    platform_has_loan_keyword: v => v ? "feat.loanKeyword" : "feat.noLoanKeyword",
+    platform_has_cash_keyword: v => v ? "feat.cashKeyword" : "feat.noCashKeyword",
+    platform_has_url:          v => v ? "feat.urlInName" : "feat.noUrlInName",
+    platform_name_is_single_word: v => v ? "feat.singleWord" : "feat.severalWords",
+    has_official_website:      v => v ? "feat.knownWebsite" : "feat.noWebsite",
   };
 
+  /**
+   * Both the key AND a rendered label are returned. Callers that re-render on a
+   * language change use labelKey/labelParams; `label` keeps working for anything
+   * that just wants a string, and for scans stored before i18n existed.
+   */
   function labelFor(feature, value) {
     const fn = FEATURE_LABEL[feature];
-    return fn ? fn(value) : feature;
+    if (!fn) return { labelKey: feature, labelParams: null, label: feature };
+    const key = fn(value);
+    const params = key === "feat.appNameLength" || key === "feat.advertiserNameLength"
+      ? { n: value } : null;
+    const I = window.CrediBytesI18n;
+    return { labelKey: key, labelParams: params,
+             label: I ? I.t(key, params) : key };
   }
 
   function scoreProbability(values) {
@@ -234,7 +243,7 @@
       swapped[i] = BASELINE[f];
       const points = Math.round((base - scoreProbability(swapped)) * 100);
       if (points !== 0) {
-        out.push({ feature: f, label: labelFor(f, named[f]), value: named[f], points });
+        out.push({ feature: f, ...labelFor(f, named[f]), value: named[f], points });
       }
     });
 

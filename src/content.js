@@ -36,6 +36,23 @@
     // <html> here belongs to Facebook, so the resolved theme is stamped onto
     // each injected root instead (see applyTheme).
     theme: "system",
+    // "en" | "tl". Panel 1 asked how a digitally or financially illiterate user
+    // would be informed; a Filipino reading English badges is that user, so the
+    // language is a setting rather than the browser locale (chrome.i18n cannot
+    // be changed at runtime).
+    lang: "en",
+  };
+
+  // Translation shim. i18n.js loads first in the manifest; the guard keeps a
+  // failed load from taking the badge down with it.
+  const T = (key, params) => {
+    const I = window.CrediBytesI18n;
+    return I ? I.t(key, params, settings.lang) : key;
+  };
+  // Renders an evidence entry, tolerating rows stored before i18n existed.
+  const TE = (entry) => {
+    const I = window.CrediBytesI18n;
+    return I ? I.render(entry, settings.lang) : (entry && entry.text) || "";
   };
 
   // Stamped on every injected root. Mirrors the popup's two-selector approach:
@@ -651,13 +668,13 @@
     // unregistered app was never authorised, whereas this one was, which is
     // exactly what makes it credible to a user.
     if (legitimacy === "revoked") {
-      return { cls: "cb-revoked", icon: "⊘", label: "Authority Revoked", bar: "AD AUTHORITY REVOKED!" };
+      return { cls: "cb-revoked", icon: "⊘", label: T("verdict.revoked.label"), bar: T("verdict.revoked.bar") };
     }
     if (legitimacy === "legitimate") {
-      return { cls: "cb-legitimate", icon: "✓", label: "SEC Verified", bar: "AD VERIFIED" };
+      return { cls: "cb-legitimate", icon: "✓", label: T("verdict.legitimate.label"), bar: T("verdict.legitimate.bar") };
     }
     if (legitimacy === "likely_legitimate") {
-      return { cls: "cb-likely", icon: "?", label: "Likely Legitimate", bar: "AD LIKELY LEGITIMATE" };
+      return { cls: "cb-likely", icon: "?", label: T("verdict.likely.label"), bar: T("verdict.likely.bar") };
     }
     // The advertiser's name is in the registry, but the ad links to a social or
     // messaging page — never a SEC-declared channel, so the name proves
@@ -665,12 +682,12 @@
     // registrant worth comparing against, and below Likely Legitimate because
     // the link itself carries no evidence.
     if (legitimacy === "name_match_only") {
-      return { cls: "cb-namematch", icon: "≈", label: "Name Match Only", bar: "AD NAME MATCH ONLY" };
+      return { cls: "cb-namematch", icon: "≈", label: T("verdict.namematch.label"), bar: T("verdict.namematch.bar") };
     }
     if (status === "no_reference_match" && isStoreUrl) {
-      return { cls: "cb-danger", icon: "!", label: "Unregistered App", bar: "AD UNREGISTERED!" };
+      return { cls: "cb-danger", icon: "!", label: T("verdict.danger.label"), bar: T("verdict.danger.bar") };
     }
-    return { cls: "cb-unverified", icon: "!", label: "Unverified", bar: "AD UNVERIFIED!" };
+    return { cls: "cb-unverified", icon: "!", label: T("verdict.unverified.label"), bar: T("verdict.unverified.bar") };
   }
 
   // ── Badge injection (createElement — no innerHTML) ───────────────────────────
@@ -707,10 +724,10 @@
     const toggle = document.createElement("button");
     toggle.className = "cb-toggle";
     toggle.type = "button";
-    toggle.title = "Show details";
+    toggle.title = T("badge.showDetails");
     toggle.setAttribute("aria-expanded", "false");
-    toggle.setAttribute("aria-label", "Show CrediBytes details");
-    toggle.textContent = "Details";
+    toggle.setAttribute("aria-label", T("badge.showCrediBytes"));
+    toggle.textContent = T("badge.details");
 
     const detail = document.createElement("div");
     detail.className = "cb-detail";
@@ -746,10 +763,10 @@
     // shows its working can be argued with; a bare sentence cannot.
     const trail = Array.isArray(matchResult.evidence) ? matchResult.evidence : [];
     if (trail.length) {
-      addSection("How this was checked");
+      addSection(T("sec.howChecked"));
       for (const e of trail) {
         const mark = e.state === "pass" ? "✓ " : e.state === "fail" ? "✕ " : "• ";
-        addRow("", mark + e.text);
+        addRow("", mark + TE(e));
       }
     } else {
       addRow("", reason);
@@ -761,25 +778,24 @@
     // and for a fuzzy suggestion alike, but the suggestion is labelled as
     // unverified so a near-miss is never mistaken for a match.
     const addDeclaredChannels = (entry) => {
-      if (entry.playUrl)    addRow("Official Play Store", entry.playUrl);
-      if (entry.appleUrl)   addRow("Official App Store", entry.appleUrl);
-      if (entry.websiteUrl) addRow("Official site", entry.websiteUrl);
+      if (entry.playUrl)    addRow(T("row.officialPlay"), entry.playUrl);
+      if (entry.appleUrl)   addRow(T("row.officialApple"), entry.appleUrl);
+      if (entry.websiteUrl) addRow(T("row.officialSite"), entry.websiteUrl);
     };
 
     if (ref) {
-      addSection(legitimacy === "name_match_only"
-        ? "Registrant claimed — link not verified"
-        : "SEC registration");
-      addRow("SEC No.", ref.sec);
-      if (ref.company) addRow("Registrant", ref.company);
-      if (ref.appName) addRow("Registered as", ref.appName);
+      addSection(T(legitimacy === "name_match_only"
+        ? "sec.registrantClaimed" : "sec.secRegistration"));
+      addRow(T("row.secNo"), ref.sec);
+      if (ref.company) addRow(T("row.registrant"), ref.company);
+      if (ref.appName) addRow(T("row.registeredAs"), ref.appName);
       addDeclaredChannels(ref);
     }
 
     if (!ref && suggestion) {
-      addSection("Possible match — not verified");
-      addRow("Company", suggestion.company);
-      addRow("SEC No.", suggestion.sec);
+      addSection(T("sec.possibleMatch"));
+      addRow(T("row.company"), suggestion.company);
+      addRow(T("row.secNo"), suggestion.sec);
       addDeclaredChannels(suggestion);
     }
 
@@ -789,60 +805,58 @@
     // here, at the strength the evidence actually supports.
     const revoked = matchResult.revoked;
     if (revoked?.verdict) {
-      addSection("SEC revoked list");
-      addRow("Status", window.CrediBytesMatcher.revokedWording(revoked));
-      if (revoked.n) addRow("Listed as", revoked.n);
-      addRow("", "The link in this ad is genuine — it belongs to this registrant. " +
-                 "What changed is the registrant's standing: the SEC has withdrawn " +
-                 "the authority under which it operated.");
+      addSection(T("sec.revokedList"));
+      addRow(T("row.status"), window.CrediBytesMatcher.revokedWording(revoked, settings.lang));
+      if (revoked.n) addRow(T("row.listedAs"), revoked.n);
+      addRow("", T("note.revokedVerdict"));
     } else if (revoked) {
-      addSection("Name appears on the SEC revoked list");
-      addRow("Listed as", revoked.n);
-      addRow("Status", window.CrediBytesMatcher.revokedWording(revoked));
+      addSection(T("sec.revokedNameOnly"));
+      addRow(T("row.listedAs"), revoked.n);
+      addRow(T("row.status"), window.CrediBytesMatcher.revokedWording(revoked, settings.lang));
       // The whole point of the advisory path, said out loud. Anyone can type a
       // company's name into an ad, so this is a prompt to check, not a finding.
-      addRow("", "This is a name match only. Nothing links this advertisement to " +
-                 "that entity, and different companies can share a name — treat it " +
-                 "as a reason to verify, not as a conclusion about this advertiser.");
+      addRow("", T("note.revokedAdvisory"));
     }
 
     // Explains the discrepancy rather than leaving "Unregistered App" to imply
     // the app was obliged to register. A calculator genuinely is not an OLA;
     // one whose advertising sells loans is the pattern worth surfacing.
     if (!ref && store && looksLikeCalculator(claimedAppName)) {
-      addSection("Listing type");
-      addRow("", "This listing presents itself as a calculator or planning tool, " +
-                 "but the advertisement offers loans. Utilities are not required " +
-                 "to register with the SEC, so treat the absence of a declaration " +
-                 "here as a mismatch to check rather than proof of wrongdoing.");
+      addSection(T("sec.listingType"));
+      addRow("", T("note.calculator"));
     }
 
     // Provenance matters: this verdict rests on the destination the ad displays
     // rather than a link we resolved. Meta renders that caption from the real
     // target, but the distinction should be visible rather than implied.
     if (fromCaption && landingHost) {
-      addSection("Destination");
-      addRow("", `Read from the ad's displayed link (${landingHost}); this preview ` +
-                 `exposes no clickable destination.`);
+      addSection(T("sec.destination"));
+      addRow("", T("note.fromCaption", { host: landingHost }));
     }
 
     const contribs = stage1Result?.contributions || [];
     if (riskDesc) {
-      addSection("Profile signal — supplementary");
-      addRow("", riskDesc);
+      addSection(T("sec.profileSignalSupp"));
+      // riskDesc from the model stays English so it matches the backend
+      // character for character (verify_export.py). Re-derive it for display so
+      // the user sees their language without breaking that parity.
+      addRow("", stage1Result?.risk_label
+        ? T("risk.desc." + stage1Result.risk_label, { pct: Math.round((prob ?? 0) * 100) })
+        : riskDesc);
       // Option B: a bare "23%" invited exactly the wrong reading next to a
       // green verdict. These say which signal moved it and by how much.
       for (const c of contribs.slice(0, 3)) {
-        addRow("", `${c.points > 0 ? "+" : ""}${c.points} pts   ${c.label}`);
+        // labelKey, not label: stage1.js resolves `label` once at explain() time
+        // using i18n's current language, which is not necessarily the user's.
+        // Rendering from the key here means the breakdown follows settings.lang
+        // like every other line on the badge.
+        const text = c.labelKey ? T(c.labelKey, c.labelParams) : c.label;
+        addRow("", `${c.points > 0 ? "+" : ""}${c.points} pts   ${text}`);
       }
-      if (contribs.length) {
-        addRow("", "Points are relative to a typical registrant. This score " +
-                   "describes the advertiser's name profile only — it never " +
-                   "decides the verdict above.");
-      }
+      if (contribs.length) addRow("", T("note.contributions"));
     } else if (isApp !== null) {
       // Fallback for older backend responses that don't yet return risk_desc
-      addSection("Profile signal");
+      addSection(T("sec.profileSignal"));
       addRow("", "Profile score: " + Math.round((prob ?? 0) * 100) + "% — " +
         (isApp ? "profile matches patterns of SEC-registered OLA platforms."
                : "profile does not match typical patterns of SEC-registered OLA platforms."));
@@ -851,8 +865,8 @@
     const setExpanded = (open) => {
       detail.hidden = !open;
       toggle.setAttribute("aria-expanded", String(open));
-      toggle.textContent = open ? "Hide" : "Details";
-      toggle.title = open ? "Hide details" : "Show details";
+      toggle.textContent = T(open ? "badge.hide" : "badge.details");
+      toggle.title = T(open ? "badge.hideDetails" : "badge.showDetails");
     };
 
     toggle.addEventListener("click", (e) => {
@@ -1375,6 +1389,8 @@
       settings.scanningEnabled = data.settings?.scanningEnabled !== false;
       settings.displayMode     = data.settings?.displayMode || "badge";
       settings.theme           = data.settings?.theme || "system";
+      settings.lang            = data.settings?.lang || "en";
+      window.CrediBytesI18n?.setLang(settings.lang);
 
       if (settings.scanningEnabled && settings.displayMode === "floating") {
         injectFloatingStyles();
@@ -1403,14 +1419,23 @@
         const prevScanning = settings.scanningEnabled;
 
         const prevTheme = settings.theme;
+        const prevLang  = settings.lang;
 
         settings.scanningEnabled = next.scanningEnabled !== false;
         settings.displayMode     = next.displayMode || "badge";
         settings.theme           = next.theme || "system";
+        settings.lang            = next.lang || "en";
+        window.CrediBytesI18n?.setLang(settings.lang);
 
         if (settings.theme !== prevTheme) refreshTheme();
 
-        if (settings.displayMode !== prevMode ||
+        // Language changes every string on screen. Badges are rendered once per
+        // ad and then left alone, so unlike the theme there is nothing to
+        // restyle — they have to be rebuilt. applySettings() already removes
+        // every badge, clears the PROCESSED marks and rescans, which is exactly
+        // that; reusing it avoids a second, subtly different teardown path.
+        if (settings.lang !== prevLang ||
+            settings.displayMode !== prevMode ||
             settings.scanningEnabled !== prevScanning) {
           applySettings();
         }

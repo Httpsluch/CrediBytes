@@ -5,6 +5,7 @@
   <title>CrediBytes</title>
   <!-- Runs before the stylesheet is applied to the body, so the popup/panel
        sizing class and the chosen theme are present at first paint. -->
+  <script src="i18n.js"></script>
   <script src="panel-init.js"></script>
   <link rel="stylesheet" href="popup.css">
 </head>
@@ -21,9 +22,9 @@
   <!-- Segmented switch. Real <button>s so both halves are keyboard reachable. -->
   <div class="tabs" role="tablist">
     <button class="tab active" data-tab="scans" role="tab"
-            aria-selected="true" aria-controls="panel-scans">Scan Results</button>
+            aria-selected="true" data-i18n="ui.scanResults" aria-controls="panel-scans">Scan Results</button>
     <button class="tab" data-tab="settings" role="tab"
-            aria-selected="false" aria-controls="panel-settings">Settings</button>
+            aria-selected="false" data-i18n="ui.settings" aria-controls="panel-settings">Settings</button>
   </div>
 
   <!-- ── Scan Results ────────────────────────────────────────────────────── -->
@@ -34,44 +35,44 @@
     <div class="stats" role="group" aria-label="Filter scans by result">
       <button class="stat s-verified" type="button" data-filter="verified" aria-pressed="false">
         <span class="stat-num" id="count-legit">0</span>
-        <span class="stat-label">Verified</span>
+        <span data-i18n="ui.verified" class="stat-label">Verified</span>
       </button>
       <button class="stat s-unverified" type="button" data-filter="unverified" aria-pressed="false">
         <span class="stat-num" id="count-unverified">0</span>
-        <span class="stat-label">Unverified</span>
+        <span data-i18n="ui.unverified" class="stat-label">Unverified</span>
       </button>
       <button class="stat s-danger" type="button" data-filter="unregistered" aria-pressed="false">
         <span class="stat-num" id="count-danger">0</span>
         <!-- Covers Unregistered App AND Authority Revoked. Was "Unregistered";
              broadened when the SEC revoked list was added, because a revoked
              registrant is not unregistered — it was registered and lost it. -->
-        <span class="stat-label">Flagged</span>
+        <span data-i18n="ui.flagged" class="stat-label">Flagged</span>
       </button>
     </div>
 
     <div class="feed" id="feed">
       <div class="empty" id="empty-state">
         <div class="empty-icon">🔍</div>
-        <div class="empty-title">No ads scanned yet</div>
-        <div class="empty-sub">Browse Facebook and CrediBytes will
+        <div data-i18n="ui.emptyTitle" class="empty-title">No ads scanned yet</div>
+        <div class="empty-sub" data-i18n="ui.emptySub">Browse Facebook and CrediBytes will
           automatically check OLA ads against the SEC registry.</div>
       </div>
     </div>
 
     <!-- Clears any active filter and scrolls back to the top. Hidden when the
          feed is empty or already unfiltered and at the top. -->
-    <button class="see-all" id="see-all" type="button" hidden>See all results</button>
+    <button data-i18n="ui.seeAll" class="see-all" id="see-all" type="button" hidden>See all results</button>
   </div>
 
   <!-- ── Settings ────────────────────────────────────────────────────────── -->
   <div class="panel" id="panel-settings" role="tabpanel">
 
     <div class="settings-section">
-      <div class="settings-label">Scanning</div>
+      <div class="settings-label" data-i18n="ui.scanning">Scanning</div>
       <div class="row">
         <div class="row-text">
-          <div class="row-title">Enable scanning</div>
-          <div class="row-sub">Detect and check OLA ads on Facebook</div>
+          <div class="row-title" data-i18n="ui.enableScanning">Enable scanning</div>
+          <div data-i18n="ui.tagline" class="row-sub">Detect and check OLA ads on Facebook</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="toggle-scanning" checked aria-label="Enable scanning">
@@ -81,50 +82,59 @@
     </div>
 
     <div class="settings-section">
-      <div class="settings-label">Display Mode</div>
+      <div class="settings-label" data-i18n="ui.displayMode">Display Mode</div>
       <div class="mode-group">
         <label class="mode-row">
           <input type="radio" name="display-mode" value="badge" checked>
           <span class="mode-dot" aria-hidden="true"></span>
-          <span class="mode-name">Inline Badge</span>
-          <span class="mode-desc">Adds a verdict label directly above each ad</span>
+          <span data-i18n="ui.inlineBadge" class="mode-name">Inline Badge</span>
+          <span data-i18n="ui.inlineBadgeDesc" class="mode-desc">Adds a verdict label directly above each ad</span>
         </label>
         <label class="mode-row">
           <input type="radio" name="display-mode" value="floating">
           <span class="mode-dot" aria-hidden="true"></span>
-          <span class="mode-name">Floating Widget</span>
-          <span class="mode-desc">Draggable summary of the page</span>
+          <span data-i18n="ui.floatingWidget" class="mode-name">Floating Widget</span>
+          <span data-i18n="ui.floatingHint" class="mode-desc">Draggable summary of the page</span>
         </label>
         <label class="mode-row">
           <input type="radio" name="display-mode" value="sidepanel">
           <span class="mode-dot" aria-hidden="true"></span>
-          <span class="mode-name">Side Panel</span>
-          <span class="mode-desc">Badges on ads plus Chrome's side panel</span>
+          <span data-i18n="ui.sidePanel" class="mode-name">Side Panel</span>
+          <span data-i18n="ui.sidePanelDesc" class="mode-desc">Badges on ads plus Chrome's side panel</span>
         </label>
       </div>
       <div class="settings-status" id="mode-status" role="status"></div>
     </div>
 
     <div class="settings-section">
-      <div class="settings-label">Appearance</div>
+      <div class="settings-label" data-i18n="ui.appearance">Appearance</div>
       <div class="seg" role="radiogroup" aria-label="Colour theme">
-        <button class="seg-btn" type="button" data-theme="light"  role="radio" aria-checked="false">Light</button>
-        <button class="seg-btn" type="button" data-theme="dark"   role="radio" aria-checked="false">Dark</button>
-        <button class="seg-btn" type="button" data-theme="system" role="radio" aria-checked="true">System</button>
+        <button class="seg-btn" type="button" data-i18n="ui.light" data-theme="light"  role="radio" aria-checked="false">Light</button>
+        <button class="seg-btn" type="button" data-i18n="ui.dark" data-theme="dark"   role="radio" aria-checked="false">Dark</button>
+        <button class="seg-btn" type="button" data-i18n="ui.system" data-theme="system" role="radio" aria-checked="true">System</button>
       </div>
-      <div class="row-sub" style="margin-top:7px">System follows your operating system setting.</div>
+      <div class="row-sub" style="margin-top:7px" data-i18n="ui.themeHint">System follows your operating system setting.</div>
     </div>
 
     <div class="settings-section">
-      <div class="settings-label">Data</div>
+      <div class="settings-label" data-i18n="ui.language">Language</div>
+      <div class="seg" role="radiogroup" aria-label="Language">
+        <button class="seg-btn" type="button" data-lang="en" role="radio" aria-checked="true">English</button>
+        <button class="seg-btn" type="button" data-lang="tl" role="radio" aria-checked="false">Tagalog</button>
+      </div>
+      <div class="row-sub" style="margin-top:7px" data-i18n="ui.langHint">Applies to badges on Facebook as well.</div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label" data-i18n="ui.data">Data</div>
       <div class="row">
         <div class="row-text">
-          <div class="row-title">Clear scan history</div>
-          <div class="row-sub">Removes all stored scan records</div>
+          <div class="row-title" data-i18n="ui.clearHistory">Clear scan history</div>
+          <div class="row-sub" data-i18n="ui.clearHint">Removes all stored scan records</div>
         </div>
-        <button class="link-btn" id="clear-btn-settings">CLEAR</button>
+        <button data-i18n="ui.clear" class="link-btn" id="clear-btn-settings">CLEAR</button>
       </div>
-      <div class="settings-note" id="ref-note">SEC reference: Philippines OLA Registry</div>
+      <div data-i18n="ui.refNote" class="settings-note" id="ref-note">SEC reference: Philippines OLA Registry</div>
     </div>
 
   </div>

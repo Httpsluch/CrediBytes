@@ -19,6 +19,7 @@
         "https://facebook.com/*"
       ],
       "js": [
+        "src/i18n.js",
         "src/sec_reference.js",
         "src/revoked_reference.js",
         "src/stage1_model.js",

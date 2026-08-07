@@ -36,3 +36,19 @@ try {
 } catch (_e) {
   /* localStorage unavailable — fall back to the OS preference. */
 }
+
+// Language, mirrored into localStorage for exactly the same reason as the theme.
+//
+// Without this the popup paints in English and then rewrites every string once
+// chrome.storage resolves, which reads as a flicker on every open — worse than
+// the theme flash, because the text reflows as it changes. Setting it here means
+// popup.js's first translate pass is already a no-op.
+try {
+  const lang = localStorage.getItem("cb-lang");
+  if (window.CrediBytesI18n && window.CrediBytesI18n.has(lang)) {
+    window.CrediBytesI18n.setLang(lang);
+    document.documentElement.lang = lang;
+  }
+} catch (_e) {
+  /* localStorage unavailable — English remains the default. */
+}

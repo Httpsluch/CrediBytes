@@ -24,6 +24,7 @@ const check = (n, c, d) => results.push({ n, pass: !!c, d });
   const page = await browser.newPage();
   await page.setContent(`<!doctype html><body>${KVIKU}</body>`);
   await page.addScriptTag({ content: CHROME_SHIM });
+  await page.addScriptTag({ content: await read("i18n.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("matcher.js") });
   await page.addScriptTag({ content: await read("content.js") });
