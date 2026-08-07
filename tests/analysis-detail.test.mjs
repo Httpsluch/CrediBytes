@@ -80,6 +80,11 @@ const browser = await chromium.launch({ headless: true });
       // Four words, so platform_name_is_single_word is 0 — the case that used
       // to render as "app name is a single word".
       multiWord: S.explain("MegaPeso", "Mega Peso Cash Loan", 1),
+      // No app name extracted — the live JuanHand case.
+      emptyFeats:    S.buildFeatures("JuanHand", "", 1),
+      blankFeats:    S.buildFeatures("JuanHand", "   ", 1),
+      realFeats:     S.buildFeatures("JuanHand", "JuanHand", 1),
+      emptyContribs: S.explain("JuanHand", "", 1),
     };
   });
 
@@ -130,6 +135,39 @@ const browser = await chromium.launch({ headless: true });
   const len = out.noSite.contributions.find(c => c.feature === "company_name_length");
   r.check("length labels state the measured value",
           !len || /\(\d+ chars\)/.test(len.label), len ? len.label : "absent");
+
+  // ── An absent app name must not be scored as a known one ───────────────────
+  //
+  // Reported from a live JuanHand badge, which showed "+9 app name is several
+  // words" and "+1 app name length (0 chars)" — several words in zero
+  // characters. All 185 training rows carry a real platform name (minimum
+  // length 4), so 0 is outside anything the model saw, and
+  // platform_name_is_single_word = 0 was learned as "a genuine multi-word
+  // phrase". Feeding the measured 0 let the trees read signal that was not
+  // there. Same defect as has_official_website being hardcoded to 0.
+  r.check("an empty app name is imputed to the typical length, not 0",
+          out.emptyFeats.platform_name_length === 9,
+          String(out.emptyFeats.platform_name_length));
+  r.check("an empty app name is not asserted to be multi-word",
+          out.emptyFeats.platform_name_is_single_word === 1,
+          String(out.emptyFeats.platform_name_is_single_word));
+  r.check("whitespace-only is treated as absent too",
+          out.blankFeats.platform_name_length === 9 &&
+          out.blankFeats.platform_name_is_single_word === 1,
+          JSON.stringify(out.blankFeats));
+
+  // The payoff: explain() skips features equal to the baseline, so the badge
+  // stops reporting app-name signals for an app name it never read.
+  r.check("no app-name row is shown when there is no app name",
+          !out.emptyContribs.some(c => c.feature === "platform_name_length" ||
+                                       c.feature === "platform_name_is_single_word"),
+          JSON.stringify(out.emptyContribs.map(c => c.label)));
+
+  // A real app name must still be measured, not imputed.
+  r.check("a real app name is still measured",
+          out.realFeats.platform_name_length === 8 &&
+          out.realFeats.platform_name_is_single_word === 1,
+          JSON.stringify(out.realFeats));
 
   // A registrant sitting exactly on the baseline has nothing to explain.
   r.check("a typical profile reports no drivers", out.typical.length === 0,

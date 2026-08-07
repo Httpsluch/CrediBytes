@@ -31,6 +31,24 @@
   // Mirrors URL_PATTERN in main.py.
   const URL_PATTERN = /https?:\/\/|www\.|\.com|\.ph|\.net|\.org/i;
 
+  // Training-set median for the continuous features and mode for the binary ones
+  // (dataset_output/ph_ola_model_ready.csv, n=185).
+  //
+  // Declared once because it does TWO jobs that must never drift apart: it is the
+  // ablation baseline in explain(), and it is what buildFeatures() imputes when
+  // the advertisement exposes no app name. Written out twice, one copy would
+  // eventually be updated without the other — the failure this file has already
+  // seen in verdictOf() and the SAVE_SCAN payload.
+  const TYPICAL = {
+    platform_name_length:      9,
+    company_name_length:       31,
+    platform_has_loan_keyword: 0,
+    platform_has_cash_keyword: 0,
+    platform_has_url:          0,
+    platform_name_is_single_word: 1,
+    has_official_website:      1,
+  };
+
   /**
    * Build the feature vector in the exact order the model was trained on.
    * Order matters: the exported trees address features by index.
@@ -39,10 +57,37 @@
     const company  = String(companyName  || "");
     const platform = String(platformName || "");
     const p = platform.toLowerCase();
+    // Many ads expose no app name at all — a news-feed post linking to a website,
+    // or a card whose title could not be read. "" is not a short app name; it is
+    // the absence of one.
+    const named = platform.trim().length > 0;
 
     return {
-      platform_name_length:      platform.length,
-      company_name_length:       company.length,
+      // IMPUTED when the app name is unknown, and this is a train/serve fix.
+      //
+      // Every one of the 185 training rows carries a real platform name, minimum
+      // length 4, so the model never saw 0 and never learned what it means. Worse,
+      // platform_name_is_single_word = 0 was learned as "a genuine multi-word
+      // descriptive phrase" (67 rows) — feeding it for an ad with NO app name
+      // asserts something false and lets the trees read signal that is not there.
+      // A live JuanHand badge scored 89% on branches partly driven by an app name
+      // that was never extracted; imputing typical values gives 63%, which is what
+      // the actual evidence (advertiser name + known website) supports.
+      //
+      // Same defect as has_official_website being hardcoded to 0 (section 3.1):
+      // an unknown encoded as a confident, extreme observation.
+      //
+      // Imputing TYPICAL rather than NaN is deliberate. LightGBM only learns a
+      // missing-value direction from missing values it saw in training, and there
+      // were none for this feature, so NaN routes arbitrarily — measured, it
+      // scores identically to 0 and fixes nothing. TYPICAL makes the feature
+      // contribute ~0, which is the honest answer, and explain() then omits these
+      // rows entirely rather than reporting a signal it does not have.
+      platform_name_length: named ? platform.length : TYPICAL.platform_name_length,
+      company_name_length:  company.length,
+      // Keyword flags are genuinely 0 for an absent name — "no 'loan' in the app
+      // name" is true when there is no app name — and 0 is also their typical
+      // value, so they need no special case.
       platform_has_loan_keyword: p.includes("loan") ? 1 : 0,
       platform_has_cash_keyword: p.includes("cash") ? 1 : 0,
       platform_has_url:          URL_PATTERN.test(platform) ? 1 : 0,
@@ -51,7 +96,9 @@
       // so it was constant in the dimension that mattered. A compacted brand
       // ("Pocketcash") and a descriptive phrase ("Peso Cash Loan") are different
       // objects that platform_name_length alone cannot separate.
-      platform_name_is_single_word: platform.trim().split(/\s+/).filter(Boolean).length === 1 ? 1 : 0,
+      platform_name_is_single_word: named
+        ? (platform.trim().split(/\s+/).filter(Boolean).length === 1 ? 1 : 0)
+        : TYPICAL.platform_name_is_single_word,
       // 0 is correct for advertisers absent from the SEC reference: there,
       // "no known official website" is a true statement, not a missing value.
       has_official_website:      hasOfficialWebsite ? 1 : 0,
@@ -116,18 +163,10 @@
   // claimed to; they are a per-feature sensitivity, which is what a reader of
   // the badge actually wants to know.
   //
-  // Baselines are the training set's median for continuous features and its mode
-  // for the binary ones (dataset_output/ph_ola_model_ready.csv, n=186).
-  const BASELINE = {
-    platform_name_length:      9,
-    company_name_length:       31,
-    platform_has_loan_keyword: 0,
-    platform_has_cash_keyword: 0,
-    platform_has_url:          0,
-    // Mode, not 0: 119 of 186 declared platform names are a single word.
-    platform_name_is_single_word: 1,
-    has_official_website:      1,
-  };
+  // The baseline IS the imputation target — see TYPICAL at the top of the file.
+  // One declaration, so a future change to the training set cannot move the
+  // ablation reference without also moving what an unknown app name becomes.
+  const BASELINE = TYPICAL;
 
   // Plain-language names. The badge is read by people checking a loan advert,
   // not by anyone who knows what "platform_name_is_single_word" means.
