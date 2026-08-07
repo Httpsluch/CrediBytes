@@ -42,7 +42,10 @@
       </button>
       <button class="stat s-danger" type="button" data-filter="unregistered" aria-pressed="false">
         <span class="stat-num" id="count-danger">0</span>
-        <span class="stat-label">Unregistered</span>
+        <!-- Covers Unregistered App AND Authority Revoked. Was "Unregistered";
+             broadened when the SEC revoked list was added, because a revoked
+             registrant is not unregistered — it was registered and lost it. -->
+        <span class="stat-label">Flagged</span>
       </button>
     </div>
 

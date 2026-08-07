@@ -20,6 +20,7 @@
       ],
       "js": [
         "src/sec_reference.js",
+        "src/revoked_reference.js",
         "src/stage1_model.js",
         "src/matcher.js",
         "src/stage1.js",

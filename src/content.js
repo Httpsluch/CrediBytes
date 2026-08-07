@@ -644,6 +644,15 @@
   // already drifted apart.
 
   function verdictOf(legitimacy, status, isStoreUrl) {
+    // Checked before "legitimate" on purpose. This state is only ever reached
+    // when the ad DID verify against a declared channel — so the registrant is
+    // real and the link genuine, and the problem is that the SEC has since
+    // withdrawn its authority. Ranked as the most severe of the six: an
+    // unregistered app was never authorised, whereas this one was, which is
+    // exactly what makes it credible to a user.
+    if (legitimacy === "revoked") {
+      return { cls: "cb-revoked", icon: "⊘", label: "Authority Revoked", bar: "AD AUTHORITY REVOKED!" };
+    }
     if (legitimacy === "legitimate") {
       return { cls: "cb-legitimate", icon: "✓", label: "SEC Verified", bar: "AD VERIFIED" };
     }
@@ -772,6 +781,29 @@
       addRow("Company", suggestion.company);
       addRow("SEC No.", suggestion.sec);
       addDeclaredChannels(suggestion);
+    }
+
+    // The SEC revoked / suspended list. Two shapes, and the wording has to keep
+    // them apart — one is a finding about this ad, the other is a caution about
+    // a name. Panel 1 asked for the blacklist to reach users; it reaches them
+    // here, at the strength the evidence actually supports.
+    const revoked = matchResult.revoked;
+    if (revoked?.verdict) {
+      addSection("SEC revoked list");
+      addRow("Status", window.CrediBytesMatcher.revokedWording(revoked));
+      if (revoked.n) addRow("Listed as", revoked.n);
+      addRow("", "The link in this ad is genuine — it belongs to this registrant. " +
+                 "What changed is the registrant's standing: the SEC has withdrawn " +
+                 "the authority under which it operated.");
+    } else if (revoked) {
+      addSection("Name appears on the SEC revoked list");
+      addRow("Listed as", revoked.n);
+      addRow("Status", window.CrediBytesMatcher.revokedWording(revoked));
+      // The whole point of the advisory path, said out loud. Anyone can type a
+      // company's name into an ad, so this is a prompt to check, not a finding.
+      addRow("", "This is a name match only. Nothing links this advertisement to " +
+                 "that entity, and different companies can share a name — treat it " +
+                 "as a reason to verify, not as a conclusion about this advertiser.");
     }
 
     // Explains the discrepancy rather than leaving "Unregistered App" to imply
@@ -1044,6 +1076,7 @@
       .cb-float-row.cb-namematch  { border-left-color: #7a5cd6; }
       .cb-float-row.cb-unverified { border-left-color: #c98a15; }
       .cb-float-row.cb-danger     { border-left-color: #d62839; }
+      .cb-float-row.cb-revoked    { border-left-color: #6d1220; }
       .cb-float-dot {
         width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
@@ -1054,6 +1087,7 @@
       .cb-float-dot.cb-namematch  { background: #7a5cd6; }
       .cb-float-dot.cb-unverified { background: #c98a15; }
       .cb-float-dot.cb-danger     { background: #d62839; }
+      .cb-float-dot.cb-revoked    { background: #6d1220; }
       .cb-float-text { display: flex; flex-direction: column; min-width: 0; }
       .cb-float-name {
         font-size: 12.5px; font-weight: 700; color: var(--f-fg);
@@ -1100,6 +1134,13 @@
       /* Violet: deliberately not green (not verified) and not red (not an
          accusation) — a registrant was identified but the link proves nothing. */
       .credibytes-badge.cb-namematch  { background:#7a5cd6; }
+      /* Darker than cb-danger and separated by a ring, because these two are the
+         only red states and they mean opposite things about the link: an
+         unregistered app was never authorised, a revoked one was. Hue alone is
+         too weak a distinction to carry that. */
+      .credibytes-badge.cb-revoked {
+        background:#6d1220; box-shadow: inset 0 0 0 2px rgba(255,255,255,.28);
+      }
 
       .credibytes-badge .cb-icon {
         width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%;
@@ -1255,6 +1296,11 @@
         // the popup days later shows the reasoning that produced it.
         evidence: Array.isArray(matchResult.evidence) ? matchResult.evidence : [],
         contributions: stage1Result?.contributions || [],
+        // `verdict` distinguishes the two paths and must survive into storage:
+        // without it the popup cannot tell "this registrant lost its licence"
+        // from "some company with this name did", and those must never be
+        // rendered the same way.
+        revoked: matchResult.revoked || null,
       },
     });
   }

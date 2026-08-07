@@ -21,19 +21,24 @@
     --brand-ink: #4d7a17;
     --on-brand:  #ffffff;
 
-    /* Five verdicts, five distinct hues. Amber vs orange was too close to read
-       at a glance, so likely-legitimate is teal and name-match is violet. */
+    /* Six verdicts, six distinct hues. Amber vs orange was too close to read
+       at a glance, so likely-legitimate is teal and name-match is violet.
+       Revoked is the one pair that shares a hue family with another state, so
+       it goes much darker than danger — the two are both "stop", but an
+       unregistered app was never authorised and a revoked one was. */
     --v-legitimate:   #2e9e4f;
     --v-likely:     #17868c;
     --v-namematch:  #7a5cd6;
     --v-unverified: #c98a15;
     --v-danger:     #d62839;
+    --v-revoked:    #6d1220;
 
     --v-legitimate-bg:   #e8f6ec;
     --v-likely-bg:     #e4f3f4;
     --v-namematch-bg:  #f0ecfd;
     --v-unverified-bg: #fdf3e0;
     --v-danger-bg:     #fdeaec;
+    --v-revoked-bg:    #f6dfe3;
 
     --radius:    12px;
     --radius-sm: 9px;
@@ -63,12 +68,14 @@
         --v-namematch:  #a78bfa;
         --v-unverified: #e0a834;
         --v-danger:     #f0616f;
+        --v-revoked:    #e0344f;
 
         --v-legitimate-bg:   #12301d;
         --v-likely-bg:     #0f2d2f;
         --v-namematch-bg:  #241d3d;
         --v-unverified-bg: #322509;
         --v-danger-bg:     #351319;
+        --v-revoked-bg:    #45060f;
 
         --shadow:   0 1px 2px rgba(0,0,0,.45);
         --shadow-2: 0 4px 14px rgba(0,0,0,.5);
@@ -92,12 +99,14 @@
     --v-namematch:  #a78bfa;
     --v-unverified: #e0a834;
     --v-danger:     #f0616f;
+    --v-revoked:    #e0344f;
 
     --v-legitimate-bg:   #12301d;
     --v-likely-bg:     #0f2d2f;
     --v-namematch-bg:  #241d3d;
     --v-unverified-bg: #322509;
     --v-danger-bg:     #351319;
+    --v-revoked-bg:    #45060f;
 
     --shadow:   0 1px 2px rgba(0,0,0,.45);
     --shadow-2: 0 4px 14px rgba(0,0,0,.5);

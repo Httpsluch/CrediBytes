@@ -106,6 +106,73 @@
 
   buildIndexes();
 
+  // ── SEC revoked / suspended list ───────────────────────────────────────────
+  // Panel 1 and Panel 3 both asked for the SEC blacklist to reach users. The
+  // obstacle is evidential: of 1,413 revoked and suspended entries, 3 carry a
+  // SEC registration number. The rest are a company name and a date.
+  //
+  // So this list can only be reached by NAME — the one thing this file refuses
+  // to treat as proof anywhere else. The refusal is kept, and made symmetric:
+  //
+  //   A name must not VERIFY an ad     (Pass 3 → name_match_only, not legitimate)
+  //   A name must not CONDEMN a company (a match here → advisory, not a verdict)
+  //
+  // The second half matters more than it looks. Every other verdict errs toward
+  // "we could not confirm this", which is safe to be wrong about. A revocation
+  // notice is the first claim made AGAINST a named business, so a false positive
+  // tells users a currently-licensed lender lost its authority. Two companies
+  // sharing a name is enough to cause that.
+  //
+  // Only ref.revoked — written into the registry after a person checked the
+  // registration numbers — is allowed to change a badge, and it is reached
+  // through a declared URL, so the revocation attaches to a registrant the ad
+  // already proved it belongs to.
+
+  const REVOKED_CATEGORY = {
+    RL: "Certificate of Authority to operate as a lending company was revoked",
+    RF: "Certificate of Authority to operate as a financing company was revoked",
+    SL: "Certificate of Authority to operate as a lending company was suspended",
+    RP: "Certificate of Registration (primary licence) was revoked",
+    RT: "Partnership registration was revoked",
+    CD: "A cease and desist order was issued",
+  };
+
+  // Map<normalisedName, entry>. Mirrors normalise() in build_revoked_reference.py
+  // — the two must agree or the shipped keys are unreachable.
+  const revokedIndex = new Map();
+
+  const REVOKED_SUFFIX = new Set([
+    "inc", "incorporated", "corp", "corporation", "co", "company", "ltd",
+    "limited", "llc", "ph", "philippines", "philippine", "the",
+  ]);
+  const REVOKED_DBA =
+    /\b(doing business|operating under|formerly|dba|under the (?:business )?name)\b/;
+
+  function normalizeRevoked(value) {
+    let s = String(value || "").toLowerCase();
+    s = s.split(REVOKED_DBA)[0];
+    s = s.replace(/[^a-z0-9\s]/g, " ");
+    return s.split(/\s+/).filter(w => w && !REVOKED_SUFFIX.has(w)).join(" ").trim();
+  }
+
+  if (typeof REVOKED_REFERENCE !== "undefined") {
+    for (const e of REVOKED_REFERENCE) revokedIndex.set(e.k, e);
+  }
+
+  // Exact normalised match only. Fuzzy matching is deliberately absent: the
+  // suggestion engine above can afford a near-miss because it labels itself a
+  // suggestion, and this cannot.
+  function lookupRevoked(name) {
+    const key = normalizeRevoked(name);
+    if (key.length < 6) return null;   // short keys collide with ordinary words
+    return revokedIndex.get(key) || null;
+  }
+
+  function revokedWording(entry) {
+    const what = REVOKED_CATEGORY[entry.c] || "A SEC registration was revoked";
+    return entry.d ? `${what} on ${entry.d}.` : `${what}.`;
+  }
+
   // ── Fuzzy suggestion (token overlap ≥ 40%) ────────────────────────────────
   // Used only for unverified results to surface the closest SEC entry by name.
   // Explicitly labeled as a suggestion, never as a verification.
@@ -251,7 +318,48 @@
 
   // ── Main matcher ───────────────────────────────────────────────────────────
 
+  // The revoked-list checks are applied here rather than inside runMatch() so
+  // they cannot be reached by any code path that skips them, and so the twelve
+  // `return result(...)` sites below stay unaware of them — nothing in the
+  // matching logic should be able to consult a revocation while deciding.
   function matchUrl(adUrl, claimedAppName = "", claimedCompany = "", fixedAppleUrl = "") {
+    const out = runMatch(adUrl, claimedAppName, claimedCompany, fixedAppleUrl);
+    const trail = out.evidence;
+
+    // Path A — VERDICT. The ad was matched to this registrant through a declared
+    // channel, and that registrant is flagged revoked in the registry after a
+    // human check. The revocation is a fact about an entity already identified,
+    // so it may change the badge.
+    if (out.ref && out.ref.revoked && out.legitimacy === "legitimate") {
+      const e = out.ref.revoked;
+      trail.push({ state: "fail",
+        text: `${out.ref.company} appears on the SEC's revoked list. ${revokedWording(e)}` });
+      return {
+        ...out,
+        legitimacy: "revoked",
+        status: "registrant_revoked",
+        revoked: { ...e, company: out.ref.company, verdict: true },
+        reason:
+          `This ad links to a channel declared by "${out.ref.company}" (${out.ref.sec}), ` +
+          `but that registrant appears on the SEC's revoked list. ${revokedWording(e)}`,
+      };
+    }
+
+    // Path B — ADVISORY. The advertiser's NAME matches a revoked entry. Nothing
+    // ties the ad to that entity beyond the name, so this is recorded and shown,
+    // and the verdict is returned exactly as the matcher decided it.
+    const advisory = lookupRevoked(claimedCompany) || lookupRevoked(claimedAppName);
+    if (advisory && !(out.ref && out.ref.revoked)) {
+      trail.push({ state: "info",
+        text: `An entity named "${advisory.n}" appears on the SEC's revoked list. ` +
+              `${revokedWording(advisory)} This ad has not been shown to belong to it.` });
+      return { ...out, revoked: { ...advisory, verdict: false } };
+    }
+
+    return out;
+  }
+
+  function runMatch(adUrl, claimedAppName = "", claimedCompany = "", fixedAppleUrl = "") {
     // Running record of what was actually checked, in the order it was checked.
     // The badge used to state a conclusion and nothing else; this lets it show
     // its working, so a reader can see which signals were available, which
@@ -412,6 +520,7 @@
   }
 
   window.CrediBytesMatcher = { matchUrl, playPackageId, appleAppId, normHost, isStoreUrl, isSocialUrl,
-                               mentionsKnownRegistrant };
+                               mentionsKnownRegistrant, lookupRevoked, revokedWording,
+                               revokedCount: revokedIndex.size };
 
 })();

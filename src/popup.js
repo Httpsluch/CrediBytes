@@ -18,11 +18,19 @@ const TIERS = {
   namematch:  { cls: "namematch",  mark: "≈", label: "Name only" },
   danger:     { cls: "danger",     mark: "!", label: "Unregistered" },
   unverified: { cls: "unverified", mark: "⚠", label: "Unverified" },
+  revoked:    { cls: "revoked",    mark: "⊘", label: "Authority revoked" },
 };
+
+// One shape, derived from TIERS. This literal was written out four separate
+// times, and one of them is incremented per scan (`counts[tierOf(s)]++`) — so a
+// tier missing from the literal did not read as zero, it read as NaN and blanked
+// the tile. Deriving it means a new verdict state cannot be half-added again.
+const EMPTY_TOTALS = Object.fromEntries(Object.keys(TIERS).map(k => [k, 0]));
 
 // Records saved before `tier` existed have to be re-derived.
 function tierOf(scan) {
   if (scan.tier && TIERS[scan.tier]) return scan.tier;
+  if (scan.legitimacy === "revoked")           return "revoked";
   if (scan.legitimacy === "legitimate")        return "legitimate";
   if (scan.legitimacy === "likely_legitimate") return "likely";
   if (scan.legitimacy === "name_match_only")   return "namematch";
@@ -31,10 +39,14 @@ function tierOf(scan) {
 }
 
 // Which tiers each tile filters to. Additive OR; clicking the active tile clears.
+// The third tile covers both red states. They are distinct verdicts and the
+// cards keep them apart, but as a filter they answer the same user question —
+// "what here should I not act on" — and the mockup has three tiles, so adding a
+// fourth for a state most sessions never see would cost more than it explains.
 const FILTER_TIERS = {
   verified:     ["legitimate"],
   unverified:   ["unverified", "likely", "namematch"],
-  unregistered: ["danger"],
+  unregistered: ["danger", "revoked"],
 };
 
 // Rendered in batches as the feed is scrolled rather than capped. The old fixed
@@ -57,7 +69,9 @@ function renderTotals(totals, fallback) {
   const unver = (t.unverified || 0) + (t.likely || 0) + (t.namematch || 0);
   document.getElementById("count-legit").textContent      = t.legitimate || 0;
   document.getElementById("count-unverified").textContent = unver;
-  document.getElementById("count-danger").textContent     = t.danger || 0;
+  // Matches FILTER_TIERS.unregistered — the tile and its filter must agree, or
+  // clicking a "3" produces four rows.
+  document.getElementById("count-danger").textContent     = (t.danger || 0) + (t.revoked || 0);
 }
 
 function syncFilterButtons() {
@@ -179,6 +193,28 @@ function buildDetail(scan) {
     put("SEC No.", scan.sec);
     put("Official site", scan.officialUrl, true);
     d.appendChild(dl);
+  }
+
+  // The SEC revoked / suspended list. The two paths are rendered differently on
+  // purpose: one reports a fact about this advertisement, the other reports a
+  // coincidence of names. Collapsing them into one block is how an advisory
+  // would start reading as a finding.
+  if (scan.revoked) {
+    const rv = scan.revoked;
+    d.appendChild(el("p", "detail-h", rv.verdict
+      ? "SEC revoked list"
+      : "Name appears on the SEC revoked list"));
+    const dl = el("dl", "kv");
+    if (rv.n) { dl.appendChild(el("dt", null, "Listed as")); dl.appendChild(el("dd", null, rv.n)); }
+    if (rv.d) { dl.appendChild(el("dt", null, "Date"));      dl.appendChild(el("dd", null, rv.d)); }
+    d.appendChild(dl);
+    d.appendChild(el("div", "contrib-note", rv.verdict
+      ? "The link in this ad is genuine and belongs to this registrant. What " +
+        "changed is the registrant's standing: the SEC has withdrawn the " +
+        "authority under which it operated."
+      : "This is a name match only. Nothing links this advertisement to that " +
+        "entity, and different companies can share a name — treat it as a " +
+        "reason to verify, not as a conclusion about this advertiser."));
   }
 
   // A fuzzy name suggestion is NEVER a verification — labelled as such.
@@ -311,7 +347,7 @@ function renderScans(scans) {
   if (!lastScans.length) {
     empty.style.display = "block";
     document.getElementById("see-all").hidden = true;
-    renderTotals(currentTotals, { legitimate: 0, likely: 0, namematch: 0, unverified: 0, danger: 0 });
+    renderTotals(currentTotals, { ...EMPTY_TOTALS });
     return;
   }
   empty.style.display = "none";
@@ -319,7 +355,7 @@ function renderScans(scans) {
   // Tiles report totals since the last clear, so they are never derived from
   // the filtered view — a filtered tile that changed its own number would be
   // reporting on itself.
-  const counts = { legitimate: 0, likely: 0, namematch: 0, unverified: 0, danger: 0 };
+  const counts = { ...EMPTY_TOTALS };
   for (const s of lastScans) counts[tierOf(s)]++;
   renderTotals(currentTotals, counts);
 
@@ -391,7 +427,7 @@ document.querySelectorAll(".seg-btn[data-theme]").forEach(btn => {
 
 function clearScans() {
   chrome.runtime.sendMessage({ type: "CLEAR_SCANS" }, () => {
-    currentTotals = { legitimate: 0, likely: 0, namematch: 0, unverified: 0, danger: 0 };
+    currentTotals = { ...EMPTY_TOTALS };
     renderScans([]);
   });
 }
@@ -534,6 +570,6 @@ chrome.storage.onChanged.addListener((changes) => {
   if (changes.totals) currentTotals = changes.totals.newValue || null;
   if (changes.scans)  renderScans(changes.scans.newValue || []);
   else if (changes.totals) {
-    renderTotals(currentTotals, { legitimate: 0, likely: 0, namematch: 0, unverified: 0, danger: 0 });
+    renderTotals(currentTotals, { ...EMPTY_TOTALS });
   }
 });

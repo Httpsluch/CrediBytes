@@ -105,7 +105,7 @@ let scanWriteQueue = Promise.resolve();
 //
 // Totals now count every scan since the last clear; the feed stays a rolling
 // window of the most recent MAX_SCANS.
-const EMPTY_TOTALS = { legitimate: 0, likely: 0, namematch: 0, unverified: 0, danger: 0 };
+const EMPTY_TOTALS = { legitimate: 0, likely: 0, namematch: 0, unverified: 0, danger: 0, revoked: 0 };
 
 function enqueueScan(payload) {
   scanWriteQueue = scanWriteQueue.then(() => appendScan(payload)).catch(() => {});
@@ -115,6 +115,7 @@ function enqueueScan(payload) {
 // Mirrors verdictOf() in content.js for records saved before `tier` existed.
 function tierOf(scan) {
   if (scan.tier) return scan.tier;
+  if (scan.legitimacy === "revoked")           return "revoked";
   if (scan.legitimacy === "legitimate")        return "legitimate";
   if (scan.legitimacy === "likely_legitimate") return "likely";
   if (scan.legitimacy === "name_match_only")   return "namematch";
