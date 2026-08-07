@@ -45,8 +45,13 @@
       company_name_length:       company.length,
       platform_has_loan_keyword: p.includes("loan") ? 1 : 0,
       platform_has_cash_keyword: p.includes("cash") ? 1 : 0,
-      platform_has_peso_keyword: p.includes("peso") ? 1 : 0,
       platform_has_url:          URL_PATTERN.test(platform) ? 1 : 0,
+      // Replaced platform_has_peso_keyword (2026-08-07), which the model never
+      // split on: "peso" marks the sector, and every training row is a lender,
+      // so it was constant in the dimension that mattered. A compacted brand
+      // ("Pocketcash") and a descriptive phrase ("Peso Cash Loan") are different
+      // objects that platform_name_length alone cannot separate.
+      platform_name_is_single_word: platform.trim().split(/\s+/).filter(Boolean).length === 1 ? 1 : 0,
       // 0 is correct for advertisers absent from the SEC reference: there,
       // "no known official website" is a true statement, not a missing value.
       has_official_website:      hasOfficialWebsite ? 1 : 0,
@@ -118,8 +123,9 @@
     company_name_length:       31,
     platform_has_loan_keyword: 0,
     platform_has_cash_keyword: 0,
-    platform_has_peso_keyword: 0,
     platform_has_url:          0,
+    // Mode, not 0: 119 of 186 declared platform names are a single word.
+    platform_name_is_single_word: 1,
     has_official_website:      1,
   };
 
@@ -130,8 +136,8 @@
     company_name_length:       "advertiser name length",
     platform_has_loan_keyword: "“loan” in the app name",
     platform_has_cash_keyword: "“cash” in the app name",
-    platform_has_peso_keyword: "“peso” in the app name",
     platform_has_url:          "a web address in the app name",
+    platform_name_is_single_word: "app name is a single word",
     has_official_website:      "known official website",
   };
 
