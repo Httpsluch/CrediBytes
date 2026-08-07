@@ -172,7 +172,8 @@ function buildDetail(scan) {
     d.appendChild(ul);
   } else if (scan.reason) {
     d.appendChild(el("p", "detail-h", T("ui.detailResult")));
-    d.appendChild(el("div", "contrib-note", scan.reason));
+    d.appendChild(el("div", "contrib-note",
+      scan.reasonKey ? T(scan.reasonKey, scan.reasonParams) : scan.reason));
   }
 
   // The registrant this ad resolved to, if any.
@@ -266,7 +267,10 @@ function buildCard(scan) {
   const main = el("div", "scan-main");
 
   main.appendChild(el("div", "scan-title", scan.advertiserName || scan.company || "Unknown advertiser"));
-  if (scan.reason) main.appendChild(el("div", "scan-reason", scan.reason));
+  // reasonKey first: `reason` is frozen in whatever language the scan was
+  // recorded in, so rendering it directly would leave old cards untranslated.
+  const reasonText = scan.reasonKey ? T(scan.reasonKey, scan.reasonParams) : scan.reason;
+  if (reasonText) main.appendChild(el("div", "scan-reason", reasonText));
 
   if (!scan.sec && scan.suggestion && scan.suggestion.company) {
     main.appendChild(el("div", "scan-hint",

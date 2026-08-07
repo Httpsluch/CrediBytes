@@ -351,5 +351,90 @@ const browser = await chromium.launch({ headless: true });
   await page.close();
 }
 
+// ── A scan recorded in one language reads in the other ───────────────────────
+//
+// The whole reason verdict text is stored as key+params. This walks the real
+// path end to end: scan an ad with Tagalog selected, take the exact payload that
+// goes to chrome.storage, and open the popup on it in English.
+//
+// `reason` was the gap — it is rendered on EVERY feed card and was being stored
+// as a finished sentence, so cards recorded in Tagalog stayed Tagalog forever.
+// reasonKey/reasonParams now travel with it.
+{
+  const page = await browser.newPage();
+  await page.route("**/*", route =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }));
+  await page.goto("https://www.facebook.com/");
+  await page.setContent(`
+    <div role="article">
+      <a role="link" href="https://www.facebook.com/x/"><strong><span>JuanHand</span></strong></a>
+      <span>Sponsored</span><div>Cash loan online, fast approval.</div>
+      <a href="https://play.google.com/store/apps/details?id=com.juanhand.fast.cash.peso.loan.app">Install</a>
+    </div>`);
+  await page.addScriptTag({ content:
+    `window.__sent=[];
+     window.__store={settings:{scanningEnabled:true,displayMode:"badge",lang:"tl"},scans:[]};
+     window.chrome={storage:{local:{
+       get(k,cb){const ks=typeof k==="string"?[k]:(Array.isArray(k)?k:Object.keys(k||{}));
+         const o={};ks.forEach(x=>{if(x in window.__store)o[x]=window.__store[x];});cb&&cb(o);},
+       set(o,cb){Object.assign(window.__store,o);cb&&cb();}},
+       onChanged:{addListener(){}}},
+       runtime:{id:"t",lastError:null,sendMessage(m,cb){window.__sent.push(m);cb&&cb({ok:true});}},
+       tabs:{query:(q,cb)=>cb([])},sidePanel:{open(){},setOptions(){return Promise.resolve();}}};` });
+  for (const f of ["i18n.js", "sec_reference.js", "revoked_reference.js",
+                   "stage1_model.js", "matcher.js", "stage1.js", "content.js"])
+    await page.addScriptTag({ content: await read(f) });
+  await page.waitForTimeout(3400);
+  const scan = await page.evaluate(() =>
+    JSON.parse(JSON.stringify(window.__sent.find(m => m.type === "SAVE_SCAN").payload)));
+  await page.close();
+
+  r.check("a scan recorded in Tagalog stores Tagalog text",
+          /Tumutugma/.test(scan.reason), scan.reason.slice(0, 60));
+  r.check("and stores the key beside it",
+          scan.reasonKey === "reason.playMatch", String(scan.reasonKey));
+
+  const pop = await browser.newPage({ viewport: { width: 360, height: 700 } });
+  await pop.route("**/popup.js", route =>
+    route.fulfill({ status: 200, contentType: "text/javascript", body: "" }));
+  await pop.goto(srcUrl("popup.html"));
+  await pop.addScriptTag({ content:
+    `window.chrome={storage:{local:{
+       get:(k,cb)=>cb({scans:${JSON.stringify([scan])},totals:null,settings:{lang:"en"}}),
+       set:(o,cb)=>cb&&cb()},onChanged:{addListener(){}}},
+       runtime:{sendMessage:(m,cb)=>cb&&cb({ok:true}),getManifest:()=>({version:"1.2.0"})},
+       tabs:{query:(q,cb)=>cb([])},sidePanel:{open(){},setOptions(){return Promise.resolve();}}};` });
+  await pop.addScriptTag({ path: SRC + "/popup.js" });
+  await pop.waitForTimeout(250);
+
+  const inEnglish = await pop.evaluate(() => {
+    document.querySelector(".scan-item")?.click();
+    return {
+      reason: document.querySelector(".scan-reason")?.textContent || "",
+      trail: [...document.querySelectorAll(".ev-item")].map(x => x.textContent).join(" | "),
+      tier: document.querySelector(".scan-mark-label")?.textContent || "",
+    };
+  });
+
+  r.check("the card reason reads in English",
+          /Play Store package ID matches/.test(inEnglish.reason) &&
+          !/Tumutugma/.test(inEnglish.reason), inEnglish.reason.slice(0, 70));
+  r.check("the stored trail reads in English too",
+          /is declared by/.test(inEnglish.trail) && !/idineklara/.test(inEnglish.trail),
+          inEnglish.trail.slice(0, 90));
+
+  // And back again, from the control itself.
+  await pop.click('.tab[data-tab="settings"]');
+  await pop.click('.seg-btn[data-lang="tl"]');
+  await pop.waitForTimeout(200);
+  const backToTl = await pop.evaluate(() => {
+    document.querySelector('.tab[data-tab="scans"]').click();
+    return document.querySelector(".scan-reason")?.textContent || "";
+  });
+  r.check("switching back returns it to Tagalog", /Tumutugma/.test(backToTl),
+          backToTl.slice(0, 70));
+  await pop.close();
+}
+
 await browser.close();
 process.exit(r.finish() ? 1 : 0);

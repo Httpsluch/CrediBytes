@@ -1297,7 +1297,7 @@
   // between injectBadge() and the floating branch, which is how isStoreUrl went
   // missing from one copy and broke the popup's "Unregistered" tier.
   function saveScan(matchResult, stage1Result, advertiserName, landingUrl) {
-    const { legitimacy, reason, ref, status, suggestion } = matchResult;
+    const { legitimacy, reason, reasonKey, reasonParams, ref, status, suggestion } = matchResult;
     const store = window.CrediBytesMatcher.isStoreUrl(landingUrl);
 
     safeSendMessage({
@@ -1313,6 +1313,13 @@
         // rules live in verdictOf() alone.
         tier: verdictOf(legitimacy, status, store).cls.replace(/^cb-/, ""),
         reason,
+        // The KEY as well as the rendered sentence. `reason` is a snapshot in
+        // whichever language was selected when the ad was scanned; the popup
+        // re-renders from reasonKey so a scan recorded in Tagalog reads in
+        // English once the setting changes — the same contract the evidence
+        // trail already had. `reason` stays for rows stored before this.
+        reasonKey: reasonKey || null,
+        reasonParams: reasonParams || null,
         advertiserName: advertiserName || "",
         company:        ref?.company    || "",
         sec:            ref?.sec        || "",
