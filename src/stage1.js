@@ -130,16 +130,41 @@
   };
 
   // Plain-language names. The badge is read by people checking a loan advert,
-  // not by anyone who knows what "platform_has_peso_keyword" means.
+  // not by anyone who knows what "platform_name_is_single_word" means.
+  //
+  // These take the VALUE, and that is the whole point of the shape. They used to
+  // be fixed strings naming the feature, which meant a row could assert the
+  // opposite of the input: an advertiser with no website on record rendered
+  //
+  //     -25   known official website
+  //
+  // and a multi-word app name rendered "+32 app name is a single word". Both
+  // read as statements of fact about the ad, and both were false — the number is
+  // what the feature is worth HERE, and for a binary feature that is usually the
+  // value being ABSENT. A reader has no way to tell which from the label alone.
+  //
+  // Reported from a live badge (WealthKites, Pinansyal na Tagapayo): two of the
+  // four rows on each card stated the reverse of the truth. `value` was already
+  // being computed and returned by explain(); it was simply never used.
   const FEATURE_LABEL = {
-    platform_name_length:      "app name length",
-    company_name_length:       "advertiser name length",
-    platform_has_loan_keyword: "“loan” in the app name",
-    platform_has_cash_keyword: "“cash” in the app name",
-    platform_has_url:          "a web address in the app name",
-    platform_name_is_single_word: "app name is a single word",
-    has_official_website:      "known official website",
+    platform_name_length:      v => `app name length (${v} chars)`,
+    company_name_length:       v => `advertiser name length (${v} chars)`,
+    platform_has_loan_keyword: v => v ? "“loan” in the app name"
+                                      : "no “loan” in the app name",
+    platform_has_cash_keyword: v => v ? "“cash” in the app name"
+                                      : "no “cash” in the app name",
+    platform_has_url:          v => v ? "a web address in the app name"
+                                      : "no web address in the app name",
+    platform_name_is_single_word: v => v ? "app name is a single word"
+                                         : "app name is several words",
+    has_official_website:      v => v ? "known official website"
+                                      : "no official website on record",
   };
+
+  function labelFor(feature, value) {
+    const fn = FEATURE_LABEL[feature];
+    return fn ? fn(value) : feature;
+  }
 
   function scoreProbability(values) {
     const model = window.CrediBytesStage1Model;
@@ -170,7 +195,7 @@
       swapped[i] = BASELINE[f];
       const points = Math.round((base - scoreProbability(swapped)) * 100);
       if (points !== 0) {
-        out.push({ feature: f, label: FEATURE_LABEL[f] || f, value: named[f], points });
+        out.push({ feature: f, label: labelFor(f, named[f]), value: named[f], points });
       }
     });
 

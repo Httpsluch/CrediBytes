@@ -77,6 +77,9 @@ const browser = await chromium.launch({ headless: true });
       noSite:   S.predict("MegaPeso", "", 0),
       withSite: S.predict("MegaPeso", "", 1),
       typical:  S.explain("A".repeat(31), "B".repeat(9), 1),
+      // Four words, so platform_name_is_single_word is 0 — the case that used
+      // to render as "app name is a single word".
+      multiWord: S.explain("MegaPeso", "Mega Peso Cash Loan", 1),
     };
   });
 
@@ -99,6 +102,34 @@ const browser = await chromium.launch({ headless: true });
   r.check("labels are human-readable, not feature keys",
           out.noSite.contributions.every(c => !/_/.test(c.label)),
           JSON.stringify(out.noSite.contributions.map(c => c.label)));
+
+  // A label must describe the value the ad ACTUALLY has, not name the feature.
+  //
+  // Reported from two live badges. An advertiser with no website on record
+  // rendered "-25  known official website", and a multi-word app name rendered
+  // "+32  app name is a single word". Both read as statements of fact about the
+  // ad and both were the reverse of the truth: for a binary feature the number
+  // is usually what its ABSENCE is worth. Two of four rows on each card were
+  // wrong this way.
+  const siteRow = out.noSite.contributions.find(c => c.feature === "has_official_website");
+  r.check("an absent website is not labelled as a known one",
+          siteRow && /no official website/i.test(siteRow.label),
+          siteRow ? siteRow.label : "absent");
+
+  // "MegaPeso" is one word; "Mega Peso Cash Loan" is four. The second must not
+  // claim to be a single word just because that is the feature's name.
+  const multi = out.multiWord.find(c => c.feature === "platform_name_is_single_word");
+  r.check("a multi-word app name is not labelled a single word",
+          multi && /several words/i.test(multi.label),
+          multi ? multi.label : "absent");
+  r.check("and the sign is unchanged by the relabel",
+          multi && typeof multi.points === "number" && multi.points !== 0,
+          multi ? String(multi.points) : "absent");
+
+  // Length rows carry the number, so a reader can see WHY it moved the score.
+  const len = out.noSite.contributions.find(c => c.feature === "company_name_length");
+  r.check("length labels state the measured value",
+          !len || /\(\d+ chars\)/.test(len.label), len ? len.label : "absent");
 
   // A registrant sitting exactly on the baseline has nothing to explain.
   r.check("a typical profile reports no drivers", out.typical.length === 0,
