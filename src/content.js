@@ -742,7 +742,10 @@
     // Labelled key/value rows instead of a flat list of sentences — the old
     // version rendered "─────" strings as fake separators, which screen readers
     // read aloud character by character.
-    const addRow = (labelText, valueText) => {
+    // `link` renders the value as a real anchor. Still textContent, never
+    // innerHTML — these URLs come from the bundled SEC reference rather than
+    // from Facebook, but the no-innerHTML rule holds everywhere in this file.
+    const addRow = (labelText, valueText, link) => {
       const row = document.createElement("div");
       row.className = "cb-row";
       if (labelText) {
@@ -751,8 +754,22 @@
         k.textContent = labelText;
         row.appendChild(k);
       }
-      const v = document.createElement("span");
-      v.className = "cb-val";
+      let v;
+      if (link && /^https?:\/\//i.test(String(valueText))) {
+        v = document.createElement("a");
+        v.href = valueText;
+        v.target = "_blank";
+        // noopener so the opened tab cannot reach back through window.opener,
+        // and this anchor sits inside a Facebook page.
+        v.rel = "noopener noreferrer";
+        v.className = "cb-val cb-link";
+        // The badge lives inside an ad, and the whole badge toggles on click.
+        // Without this the browser would follow the link AND collapse the panel.
+        v.addEventListener("click", (e) => e.stopPropagation());
+      } else {
+        v = document.createElement("span");
+        v.className = "cb-val";
+      }
       v.textContent = valueText;
       row.appendChild(v);
       detail.appendChild(row);
@@ -792,9 +809,9 @@
     // and for a fuzzy suggestion alike, but the suggestion is labelled as
     // unverified so a near-miss is never mistaken for a match.
     const addDeclaredChannels = (entry) => {
-      if (entry.playUrl)    addRow(T("row.officialPlay"), entry.playUrl);
-      if (entry.appleUrl)   addRow(T("row.officialApple"), entry.appleUrl);
-      if (entry.websiteUrl) addRow(T("row.officialSite"), entry.websiteUrl);
+      if (entry.playUrl)    addRow(T("row.officialPlay"), entry.playUrl, true);
+      if (entry.appleUrl)   addRow(T("row.officialApple"), entry.appleUrl, true);
+      if (entry.websiteUrl) addRow(T("row.officialSite"), entry.websiteUrl, true);
     };
 
     if (ref) {
@@ -1148,6 +1165,21 @@
         background:#6d1220; box-shadow: inset 0 0 0 2px rgba(255,255,255,.28);
       }
 
+      /* Official channels are real links. They must look reachable inside a
+         dense panel, and must not collapse the badge when clicked. */
+      .credibytes-badge .cb-link {
+        color: #7ec8ff; text-decoration: none;
+        border-bottom: 1px solid transparent;
+        transition: color .14s ease, border-color .14s ease;
+        cursor: pointer; word-break: break-all;
+      }
+      .credibytes-badge .cb-link:hover,
+      .credibytes-badge .cb-link:focus-visible {
+        color: #ffffff; border-bottom-color: currentColor;
+      }
+      .credibytes-badge.cb-light .cb-link { color: #1a6ec0; }
+      .credibytes-badge.cb-light .cb-link:hover { color: #0b3f77; }
+
       .credibytes-badge .cb-icon {
         width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
@@ -1311,6 +1343,16 @@
         sec:            ref?.sec        || "",
         officialUrl:    ref?.websiteUrl || "",
         isStoreUrl:     store,
+        // Where the ad actually points. The card names the destination and
+        // decides whether to offer the listing check from these; officialUrl is
+        // the REGISTRANT's site, which is a different thing.
+        //
+        // These were lost once already: content.js was restored from git mid-edit
+        // and took the payload change with it, so the side panel showed "—" for
+        // every destination while the inline badge showed it correctly. The badge
+        // reads landingHost directly; only the stored record needs this.
+        destUrl:        landingUrl || "",
+        destHost:       window.CrediBytesMatcher.normHost(landingUrl || ""),
         isApp:          stage1Result?.is_app      ?? null,
         prob:           stage1Result?.probability ?? null,
         riskLabel:      stage1Result?.risk_label  ?? null,

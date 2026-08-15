@@ -154,11 +154,24 @@ function buildDetail(scan) {
   d.appendChild(el("p", "detail-h", T("card.action")));
   d.appendChild(el("div", "detail-body", view.action));
 
-  // The registrant's real declared channels, so a user can compare the ad
-  // against where the genuine article lives. Only for a confirmed match — under
-  // a possible match these would read as though the identity were settled.
-  if ((view.tier === "legitimate" || view.tier === "revoked") &&
-      (scan.sec || scan.officialUrl)) {
+  // ── SEC REGISTRATION ──────────────────────────────────────────────────────
+  // The registrant's real declared channels, so a user can compare the ad in
+  // front of them against where the genuine article lives. This is the whole
+  // point of naming a registrant at all, and it belongs on both surfaces — the
+  // inline badge has always carried it.
+  //
+  // Shown for a possible match too, under its own heading. It was briefly
+  // withheld there on the reasoning that a SEC number beside an unconfirmed
+  // match makes a guess look like a finding; the heading carries that instead,
+  // and a user comparing an ad against the real channels is exactly who needs
+  // them most.
+  const named = scan.company || scan.sec || scan.officialUrl;
+  const confirmed = view.tier === "legitimate" || view.tier === "revoked";
+  const sugg = (!scan.company && scan.suggestion) ? scan.suggestion : null;
+
+  if (named || sugg) {
+    d.appendChild(el("p", "detail-h",
+      T(confirmed ? "sec.secRegistration" : "sec.possibleMatch")));
     const dl = el("dl", "kv");
     const put = (k, v, link) => {
       if (!v) return;
@@ -172,8 +185,9 @@ function buildDetail(scan) {
       } else dd.textContent = v;
       dl.appendChild(dd);
     };
-    put(T("row.secNo"), scan.sec);
-    put(T("row.officialSite"), scan.officialUrl, true);
+    put(T("row.secNo"), sugg ? sugg.sec : scan.sec);
+    put(T("row.registrant"), sugg ? sugg.company : scan.company);
+    put(T("row.officialSite"), sugg ? sugg.websiteUrl : scan.officialUrl, true);
     if (dl.childElementCount) d.appendChild(dl);
   }
 
@@ -305,7 +319,11 @@ function buildCard(scan) {
   // runs and is still recorded; it is simply no longer shown as though it
   // decided anything.
   const side = el("div", "scan-side");
-  side.appendChild(el("div", "verdict-icon " + view.cls, VERDICT_MARK[view.state]));
+  // The glyph is a child so the flagged triangle can colour it independently —
+  // clip-path fills the shape, so the mark has to invert against it.
+  const icon = el("div", "verdict-icon " + view.cls);
+  icon.appendChild(el("span", "verdict-glyph", VERDICT_MARK[view.state]));
+  side.appendChild(icon);
   side.appendChild(el("span", "verdict-word " + view.cls, view.stateLabel));
   head.appendChild(side);
   item.appendChild(head);

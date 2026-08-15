@@ -451,12 +451,33 @@ html.is-sidepanel, html.is-sidepanel body {
 .cb-v-unverified { color: var(--v-unverified); }
 .cb-v-flagged    { color: var(--v-danger); }
 
-/* Flagged uses a triangle rather than a circle — the two red states are the
-   only ones a user must not act on, and shape survives colour-blindness. */
+/* Flagged uses an upright triangle rather than a circle — the two red states
+   are the only ones a user must not act on, and shape survives colour-blindness
+   where hue does not. Drawn with clip-path so it stays a real triangle at any
+   size; an earlier rotate(45deg) square read as a diamond tilted on its corner.
+   No border here: clip-path would cut the stroke into slivers, so the fill
+   carries the shape and the glyph sits inside it. */
 .verdict-icon.cb-v-flagged {
-  border-radius: 4px; transform: rotate(45deg);
+  border: none;
+  background: currentColor;
+  clip-path: polygon(50% 4%, 96% 92%, 4% 92%);
+  border-radius: 0;
+  width: 44px; height: 40px;
+  align-items: flex-end;
+  padding-bottom: 3px;
 }
-.verdict-icon.cb-v-flagged > * { transform: rotate(-45deg); }
+.verdict-icon.cb-v-flagged > .verdict-glyph { color: var(--surface); font-size: 17px; }
+
+/* Official links are real anchors — they must look reachable. */
+.kv dd a {
+  color: var(--brand-ink); text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color .14s ease, border-color .14s ease;
+  word-break: break-all;
+}
+.kv dd a:hover, .kv dd a:focus-visible {
+  color: var(--v-legitimate); border-bottom-color: currentColor;
+}
 
 .check-list { margin: 6px 0 12px; padding-left: 18px; }
 .check-item {

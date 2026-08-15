@@ -246,12 +246,18 @@ const browser = await chromium.launch({ headless: true });
           `items=${after.checkItems}`);
   r.check("no score points are shown any more", after.contribRows === 0,
           `rows=${after.contribRows}`);
-  // A possible match names the registrant but NOT its SEC number — printing
-  // the number beside an unconfirmed match makes a guess look like a finding.
-  r.check("possible match names the registrant without its SEC number",
+  // A possible match shows the registrant AND its declared channels, under a
+  // heading that says it is unverified. Withholding the details was tried and
+  // reversed: someone comparing an ad against the real channels is exactly who
+  // needs them, and "Possible match — not verified" carries the caveat that
+  // hiding the SEC number was trying to carry.
+  r.check("possible match is labelled as such",
           /Possible match/.test(after.cardText) &&
-          /Super-Space PH Lending Inc/.test(after.cardText) &&
-          !/CS2021030008899/.test(after.cardText), after.cardText.slice(0, 140));
+          /Super-Space PH Lending Inc/.test(after.cardText),
+          after.cardText.slice(0, 140));
+  r.check("and still exposes the registrant's details to compare against",
+          /CS2021030008899/.test(after.cardText) &&
+          /not verified/i.test(after.cardText), after.cardText.slice(0, 200));
   r.check("the three sections are present",
           /HOW THIS WAS CHECKED/.test(after.text) && /WHAT THIS MEANS/.test(after.text) &&
           /RECOMMENDED ACTION/.test(after.text), after.text.slice(0, 140));
