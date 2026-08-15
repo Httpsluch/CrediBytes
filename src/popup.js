@@ -261,8 +261,12 @@ function buildListing(L) {
   add("listing.developer", L.developer);
   add("listing.ratings", L.ratings);
   add("listing.updated", L.updated);
-  add("listing.privacy", T(L.privacyFree ? "listing.privacyFree"
-                            : L.privacy ? "listing.privacyOk" : "listing.privacyNone"));
+  // Omitted entirely when unknown. Printing "none listed" for a store whose API
+  // does not expose the field states something false about the app.
+  if (L.privacy !== null && L.privacy !== undefined) {
+    add("listing.privacy", T(L.privacyFree ? "listing.privacyFree"
+                              : L.privacy ? "listing.privacyOk" : "listing.privacyNone"));
+  }
   box.appendChild(ul);
   if (typeof L.pct === "number") {
     box.appendChild(el("div", "detail-body", T("listing.verdict", { pct: L.pct })));

@@ -115,7 +115,9 @@ await page.addScriptTag({ content: await read("stage3.js") });
       updatedMs: Date.now() - 12 * 86400000, policy: "", contentRating: "4+",
     };
     const freeHost = { ...play, policy: "https://pesoloan.blogspot.com/privacy" };
-    const bare = { isPlay: 1, title: "", developer: "", contentRating: "" };
+    // policy: "" means we LOOKED and found none. Omitting the key entirely now
+    // means we never looked, which is a different feature value.
+    const bare = { isPlay: 1, title: "", developer: "", contentRating: "", policy: "" };
     return {
       play: S.buildFeatures3(play, "Makati Loan Inc"),
       apple: S.buildFeatures3(apple, "HC Consumer Finance"),
@@ -152,7 +154,7 @@ await page.addScriptTag({ content: await read("stage3.js") });
   r.check("an unknown developer name leaves the match unknown, not false",
           out.bare.dev_matches_advertiser === undefined,
           String(out.bare.dev_matches_advertiser));
-  // A genuinely absent policy IS a real 0 — the field was readable and empty.
+  // A policy we looked for and did not find IS a real 0 — readable and empty.
   r.check("an absent privacy policy is a real zero, not missing",
           out.bare.has_privacy_policy === 0, String(out.bare.has_privacy_policy));
 }
@@ -310,6 +312,72 @@ return globalThis;`);
           String(L && L.updated));
   r.check("a score reaches the popup", !!L && typeof L.pct === "number",
           String(L && L.pct));
+}
+
+// ── Unknown is not "none" ───────────────────────────────────────────────────
+//
+// Reported live: every Cashify card read "Privacy policy: none listed", on both
+// stores, for apps that plainly have one.
+//
+// Apple's cause was structural. The iTunes lookup API exposes no privacy field
+// at all, so we never looked — but "" became has_privacy_policy = 0, telling the
+// model that every Apple app lacks a policy and telling the user something
+// false. Training carried real values for all 38 Apple rows because the
+// enrichment scraped the store PAGE, so this was a train/serve skew too.
+{
+  const out = await page.evaluate(() => {
+    const S = window.CrediBytesStage3;
+    const base = { isPlay: 0, title: "Cashify PH", developer: "SUNLOAN LENDING INVESTORS CORP.",
+                   rating: 4.5, reviews: 13369, updatedMs: Date.now() - 3 * 86400000,
+                   contentRating: "4+" };
+    return {
+      unknown: S.buildFeatures3({ ...base, policy: undefined }, "Cashify"),
+      absent:  S.buildFeatures3({ ...base, policy: "" }, "Cashify"),
+      present: S.buildFeatures3({ ...base, policy: "https://sunloanlending.com/p" }, "Cashify"),
+    };
+  });
+
+  r.check("a policy we never looked for is undefined, not 0",
+          out.unknown.has_privacy_policy === undefined,
+          String(out.unknown.has_privacy_policy));
+  r.check("and its free-host flag is undefined too",
+          out.unknown.privacy_policy_is_free_host === undefined,
+          String(out.unknown.privacy_policy_is_free_host));
+  // The distinction only means something if a REAL absence still reads as 0.
+  r.check("a policy we looked for and did not find IS 0",
+          out.absent.has_privacy_policy === 0, String(out.absent.has_privacy_policy));
+  r.check("a policy we found is 1",
+          out.present.has_privacy_policy === 1, String(out.present.has_privacy_policy));
+}
+
+// ── The dataset index is not pinned ─────────────────────────────────────────
+//
+// Play's ds: numbering is internal ordering and varies by response. Pinning
+// ds:5 produced a listing where every field was empty while the card still
+// rendered — one row, and a percentage computed from nothing.
+{
+  const out = await page.evaluate(() => {
+    const S = window.CrediBytesStage3;
+    const rec = []; rec[1] = []; rec[1][2] = [];
+    rec[1][2][0] = ["Cashify PH-Fast and Safe Cash"];
+    rec[1][2][68] = ["Sunloan Lending Investors Corporation"];
+    // Deliberately NOT ds:5.
+    const ds = { "ds:2": [1, 2, 3], "ds:7": rec, "ds:9": null };
+    const found = S.findAppDataset(ds);
+    let threw = false;
+    try { S.assertReadable({ title: "", developer: "" }); } catch (_e) { threw = true; }
+    return {
+      title: found && found[1][2][0][0],
+      none: S.findAppDataset({ "ds:1": [1], "ds:2": null }),
+      threw,
+    };
+  });
+
+  r.check("the app record is found wherever it is keyed",
+          out.title === "Cashify PH-Fast and Safe Cash", String(out.title));
+  r.check("and nothing is invented when it is absent", out.none === null, String(out.none));
+  r.check("an unreadable listing throws instead of scoring blanks",
+          out.threw === true, String(out.threw));
 }
 
 await page.close();

@@ -81,12 +81,31 @@ function parsePlayDatasets(html) {
   return out;
 }
 
+/**
+ * Find the dataset holding the app record.
+ *
+ * NOT hardcoded to ds:5. The index is Google's internal ordering and it varies
+ * by response — pinning it produced a listing where every field came back empty
+ * while the card still rendered, showing one row and a score built from nothing.
+ * Identifying the dataset by its SHAPE survives a renumbering.
+ */
+function findAppDataset(ds) {
+  for (const key of Object.keys(ds)) {
+    const title = pathGet(ds[key], PLAY_SPEC.title);
+    if (typeof title === "string" && title.trim()) return ds[key];
+  }
+  return null;
+}
+
 async function fetchPlay(pkg) {
   const r = await fetch(
     `https://play.google.com/store/apps/details?id=${encodeURIComponent(pkg)}&hl=en&gl=PH`);
+  // Play answers 403 to a request carrying Sec-Fetch-Mode: cors, which is what
+  // fetch() sends. Surface it rather than letting an empty body parse to a
+  // listing full of blanks that still scores.
   if (!r.ok) throw new Error(`play ${r.status}`);
   const ds = parsePlayDatasets(await r.text());
-  const d = ds["ds:5"];
+  const d = findAppDataset(ds);
   if (!d) throw new Error("no listing data");
 
   const g = (k) => pathGet(d, PLAY_SPEC[k]);
@@ -103,6 +122,20 @@ async function fetchPlay(pkg) {
     policy: policy || "",
     contentRating: g("contentRating") || "",
   };
+}
+
+/**
+ * Refuse to report a listing we could not actually read.
+ *
+ * Without this, a page that parsed but yielded nothing produced a panel with a
+ * single row and a confident percentage — worse than an error, because it looks
+ * like a measurement. Same failure the v1.0 enrichment had.
+ */
+function assertReadable(L) {
+  if (!String(L.title || "").trim() && !String(L.developer || "").trim()) {
+    throw new Error("listing unreadable");
+  }
+  return L;
 }
 
 async function fetchApple(appId) {
@@ -123,9 +156,16 @@ async function fetchApple(appId) {
     reviews: typeof a.userRatingCount === "number" ? a.userRatingCount : undefined,
     updatedMs: a.currentVersionReleaseDate
       ? Date.parse(a.currentVersionReleaseDate) : undefined,
-    // The iTunes lookup API has no privacyPolicyUrl key at all — confirmed
-    // against the live API — so absence here says nothing either way.
-    policy: "",
+    // UNKNOWN, not absent. The iTunes lookup API has no privacyPolicyUrl key at
+    // all — confirmed against the live API — so we simply did not look.
+    //
+    // This previously sent "" and became has_privacy_policy = 0, which told the
+    // model every Apple app lacks a policy. It also displayed "Privacy policy:
+    // none listed" for apps that plainly have one. Training carried real values
+    // for all 38 Apple rows (26 with, 12 without) because the enrichment
+    // scraped the store PAGE, so a fabricated 0 was a train/serve skew as well
+    // as a false statement on screen.
+    policy: undefined,
     contentRating: a.contentAdvisoryRating || "",
   };
 }
@@ -163,8 +203,11 @@ function buildFeatures3(L, advertiserName) {
     rating_num: L.rating,
     review_count_num: L.reviews,
     days_since_last_update: days,
-    has_privacy_policy: L.policy ? 1 : 0,
-    privacy_policy_is_free_host: L.policy ? (FREE_POLICY_HOST.test(L.policy) ? 1 : 0) : 0,
+    // undefined means "not looked at"; "" means "looked, and there is none".
+    // Collapsing the two is how every Apple app came to report no policy.
+    has_privacy_policy: L.policy === undefined ? undefined : (L.policy ? 1 : 0),
+    privacy_policy_is_free_host: L.policy === undefined ? undefined
+      : (L.policy ? (FREE_POLICY_HOST.test(L.policy) ? 1 : 0) : 0),
     developer_name_length: String(L.developer || "").length,
     app_title_length: String(L.title || "").length,
     dev_matches_advertiser: devMatches(L.developer, advertiserName),
@@ -206,4 +249,5 @@ function score3(named) {
 
 globalThis.CrediBytesStage3 = {
   fetchPlay, fetchApple, buildFeatures3, score3, parsePlayDatasets, devMatches,
+  findAppDataset, assertReadable,
 };

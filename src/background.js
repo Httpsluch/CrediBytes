@@ -203,8 +203,9 @@ async function readListing(url, advertiserName) {
   if (listingCache.has(cacheKey)) return listingCache.get(cacheKey);
 
   const S3 = globalThis.CrediBytesStage3;
-  const L = /^id\d+$/i.test(key) ? await S3.fetchApple(key.slice(2))
-                                 : await S3.fetchPlay(key);
+  const L = S3.assertReadable(
+    /^id\d+$/i.test(key) ? await S3.fetchApple(key.slice(2))
+                         : await S3.fetchPlay(key));
 
   const feats = S3.buildFeatures3(L, advertiserName);
   const p = S3.score3(feats);
@@ -224,8 +225,11 @@ async function readListing(url, advertiserName) {
       : (L.reviews !== undefined ? `${L.reviews.toLocaleString()} ratings` : ""),
     updated: L.updatedMs !== undefined
       ? new Date(L.updatedMs).toISOString().slice(0, 10) : "",
-    privacy: !!L.policy,
-    privacyFree: !!L.policy && /(blogspot|wordpress\.com|sites\.google|weebly|wixsite|github\.io|firebaseapp|000webhost|blogger)/i.test(L.policy),
+    // null = we did not look (Apple's lookup API exposes no policy field).
+    // The card omits the row entirely rather than claiming "none listed".
+    privacy: L.policy === undefined ? null : !!L.policy,
+    privacyFree: L.policy === undefined ? null
+      : (!!L.policy && /(blogspot|wordpress\.com|sites\.google|weebly|wixsite|github\.io|firebaseapp|000webhost|blogger)/i.test(L.policy)),
     // Rounded for display only; the model saw the exact value.
     pct: p === null ? null : Math.round(p * 100),
   };
