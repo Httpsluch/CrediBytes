@@ -46,7 +46,7 @@
     en: {
       // ── Verdicts ─────────────────────────────────────────────────────────
       "verdict.revoked.label": "Authority Revoked",
-      "verdict.revoked.bar": "AD AUTHORITY REVOKED!",
+      "verdict.revoked.bar": "AD AUTHORITY REVOKED",
       "verdict.legitimate.label": "SEC Verified",
       "verdict.legitimate.bar": "AD VERIFIED",
       "verdict.likely.label": "Likely Legitimate",
@@ -54,9 +54,9 @@
       "verdict.namematch.label": "Name Match Only",
       "verdict.namematch.bar": "AD NAME MATCH ONLY",
       "verdict.danger.label": "Unregistered App",
-      "verdict.danger.bar": "AD UNREGISTERED!",
+      "verdict.danger.bar": "AD UNREGISTERED",
       "verdict.unverified.label": "Unverified",
-      "verdict.unverified.bar": "AD UNVERIFIED!",
+      "verdict.unverified.bar": "AD UNVERIFIED",
 
       // ── Evidence trail ───────────────────────────────────────────────────
       "ev.noDestination": "No destination could be read from this ad.",
@@ -249,7 +249,7 @@
     tl: {
       // ── Verdicts ─────────────────────────────────────────────────────────
       "verdict.revoked.label": "Binawi ang Awtoridad",
-      "verdict.revoked.bar": "BINAWI ANG AWTORIDAD!",
+      "verdict.revoked.bar": "BINAWI ANG AWTORIDAD",
       "verdict.legitimate.label": "SEC Verified",
       "verdict.legitimate.bar": "VERIFIED ANG AD",
       "verdict.likely.label": "Malamang Lehitimo",
@@ -257,9 +257,9 @@
       "verdict.namematch.label": "Pangalan Lang ang Tugma",
       "verdict.namematch.bar": "PANGALAN LANG ANG TUGMA",
       "verdict.danger.label": "Hindi Rehistradong App",
-      "verdict.danger.bar": "HINDI REHISTRADO!",
+      "verdict.danger.bar": "HINDI REHISTRADO",
       "verdict.unverified.label": "Hindi Ma-verify",
-      "verdict.unverified.bar": "HINDI MA-VERIFY!",
+      "verdict.unverified.bar": "HINDI MA-VERIFY",
 
       // ── Evidence trail ───────────────────────────────────────────────────
       "ev.noDestination": "Walang mabasang destinasyon sa ad na ito.",
