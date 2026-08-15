@@ -2,7 +2,11 @@
  * stage1_model.js — GENERATED FILE, DO NOT EDIT BY HAND
  *
  * Produced by CrediBytes-Backend/export_model_js.py from model.joblib.
- * Regenerate after retraining; verify with verify_export.py.
+ * Regenerate after retraining; verify with the matching verify script.
+ *
+ * Feature ORDER is load-bearing: the exported trees address features by
+ * index, so a reordered list would score every input against the wrong
+ * columns without raising anything.
  *
  * Trees: 100   Features: platform_name_length, company_name_length, platform_has_loan_keyword, platform_has_cash_keyword, platform_has_url, platform_name_is_single_word, has_official_website
  */

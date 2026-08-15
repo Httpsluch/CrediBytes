@@ -180,73 +180,65 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 
 // ── Stage 3, on request: read an advertised app's store listing ────────────
 //
-// Deliberately NOT automatic. Fetching a listing for every store-linked ad a
-// user scrolls past would mean hundreds of requests per session — Google rate
-// limits that, and it would have the browser quietly contacting Google about
-// every app a user sees. One deliberate click per card removes both problems,
-// and a failed read becomes visible rather than silent.
+// Deliberately NOT automatic — see the header of stage3.js for why, and for why
+// the Play side reads the page's embedded structured data rather than regexing
+// its visible HTML.
 //
-// Content scripts cannot do this themselves: Facebook's CSP blocks fetch() to
-// other origins, and MV3 service workers are exempt.
-const listingCache = new Map();      // storeKey -> listing, FIFO
+// importScripts, not import: this is a classic service worker, and the model is
+// a plain window/self assignment.
+importScripts("stage3_model.js", "stage3.js");
+
+const listingCache = new Map();      // storeKey -> { listing, pct }, FIFO
 const LISTING_CACHE_MAX = 120;
 
 function storeKeyOf(url) {
   const m = /[?&]id=([^&]+)/.exec(url) || /\/(id\d+)/.exec(url);
-  return m ? m[1].toLowerCase() : "";
+  return m ? m[1] : "";
 }
 
-async function readListing(url) {
+async function readListing(url, advertiserName) {
   const key = storeKeyOf(url);
   if (!key) throw new Error("not a store url");
-  if (listingCache.has(key)) return listingCache.get(key);
+  const cacheKey = `${key}|${advertiserName || ""}`;
+  if (listingCache.has(cacheKey)) return listingCache.get(cacheKey);
 
-  let out;
-  if (/^id\d+$/.test(key)) {
-    // Apple publishes a real JSON API, so this half never needs scraping.
-    const r = await fetch(
-      `https://itunes.apple.com/lookup?id=${key.slice(2)}&country=ph`);
-    const j = await r.json();
-    const a = j.results && j.results[0];
-    if (!a) throw new Error("not in the PH storefront");
-    out = {
-      developer: a.sellerName || a.artistName || "",
-      ratings: a.userRatingCount != null ? String(a.userRatingCount) : "",
-      updated: String(a.currentVersionReleaseDate || "").slice(0, 10),
-      privacy: true, privacyFree: false,
-    };
-  } else {
-    // Play has to be scraped, which is the fragile half. Anything it cannot
-    // find is left blank rather than guessed, and the card simply omits the row
-    // — the old failure mode here was regexes that silently matched nothing and
-    // reported zeros as though they were measurements.
-    const r = await fetch(
-      `https://play.google.com/store/apps/details?id=${encodeURIComponent(key)}&hl=en&gl=PH`);
-    const t = await r.text();
-    const dev = /href="\/store\/apps\/dev(?:eloper)?\?id=[^"]*"[^>]*>[\s\S]*?<span[^>]*>([^<]{2,70})<\/span>/.exec(t);
-    const inst = /([\d,.]+\s*[KMB]?\+)\s*Downloads/.exec(t);
-    const upd = /Updated on\s*([A-Z][a-z]{2,9}\s+\d{1,2},\s*\d{4})/.exec(t);
-    const pp = /"(https?:\/\/[^"]+)"[^"]*Privacy Policy/i.exec(t);
-    out = {
-      developer: dev ? dev[1].trim() : "",
-      ratings: inst ? inst[1] + " installs" : "",
-      updated: upd ? upd[1] : "",
-      privacy: !!pp,
-      privacyFree: pp ? /(blogspot|wordpress\.com|sites\.google|weebly|wixsite|github\.io)/i.test(pp[1]) : false,
-    };
-  }
+  const S3 = self.CrediBytesStage3;
+  const L = /^id\d+$/i.test(key) ? await S3.fetchApple(key.slice(2))
+                                 : await S3.fetchPlay(key);
+
+  const feats = S3.buildFeatures3(L, advertiserName);
+  const p = S3.score3(feats);
+
+  const out = {
+    listing: {
+      developer: L.developer,
+      // Installs where the store publishes them, ratings otherwise. Apple gives
+      // no install count at all, so showing "0 installs" there would be a
+      // fabrication rather than a measurement.
+      ratings: L.installs !== undefined
+        ? `${L.installs.toLocaleString()} installs`
+        : (L.reviews !== undefined ? `${L.reviews.toLocaleString()} ratings` : ""),
+      updated: L.updatedMs !== undefined
+        ? new Date(L.updatedMs).toISOString().slice(0, 10) : "",
+      privacy: !!L.policy,
+      privacyFree: !!L.policy && /(blogspot|wordpress\.com|sites\.google|weebly|wixsite|github\.io|firebaseapp|000webhost|blogger)/i.test(L.policy),
+      // Rounded for display only; the model saw the exact value.
+      pct: p === null ? null : Math.round(p * 100),
+    },
+  };
 
   if (listingCache.size >= LISTING_CACHE_MAX) {
     listingCache.delete(listingCache.keys().next().value);
   }
-  listingCache.set(key, out);
+  listingCache.set(cacheKey, out);
   return out;
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "CHECK_LISTING") {
-    readListing(message.url)
+    // The advertiser name feeds dev_matches_advertiser, one of the 15 features.
+    readListing(message.url, message.advertiserName)
       .then(listing => sendResponse({ ok: true, listing }))
       .catch(() => sendResponse({ ok: false, listing: null }));
     return true;

@@ -222,7 +222,7 @@ function buildDetail(scan) {
       btn.textContent = T("btn.checking");
 
       const go = () => chrome.runtime.sendMessage(
-        { type: "CHECK_LISTING", url: scan.destUrl },
+        { type: "CHECK_LISTING", url: scan.destUrl, advertiserName: scan.advertiserName || scan.company || "" },
         (res) => {
           btn.remove();
           wrap.appendChild(res && res.ok ? buildListing(res.listing)
