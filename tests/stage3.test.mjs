@@ -238,6 +238,80 @@ return globalThis;`);
   await worker.close();
 }
 
+// ── The response the popup actually receives ────────────────────────────────
+//
+// readListing() returns the listing FLAT; the message handler wraps it once as
+// { ok, listing }. An earlier version wrapped it at both levels, so the popup
+// got res.listing.listing and every field read undefined. The card still
+// rendered — with a single "Privacy policy: none listed" row, because that
+// label is a constant string while everything else was missing. Nothing threw,
+// and no test noticed, because nothing asserted on the shape.
+{
+  const out = await page.evaluate(async ([bgSrc, modelSrc, libSrc]) => {
+    // Run background.js in a worker-shaped scope and capture what the
+    // CHECK_LISTING handler passes to sendResponse.
+    let handler = null;
+    const g = {
+      Map, Set, JSON, Date, Math, Promise, console, URL, RegExp,
+      encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout, isNaN,
+      fetch: async () => ({ ok: true, json: async () => ({ results: [{
+        trackName: "Peso Cash Loan", sellerName: "MAKATI LOAN, INC",
+        averageUserRating: 4.6, userRatingCount: 9000,
+        currentVersionReleaseDate: new Date(Date.now() - 20 * 86400000).toISOString(),
+        contentAdvisoryRating: "4+" }] }) }),
+      chrome: {
+        runtime: { onInstalled: { addListener() {} }, onStartup: { addListener() {} },
+                   onMessage: { addListener(fn) { handler = fn; } }, lastError: null },
+        storage: { local: { get: async () => ({}), set: async () => {} },
+                   onChanged: { addListener() {} } },
+        action: { setPopup: async () => {} },
+        sidePanel: { setPanelBehavior: async () => {} },
+        tabs: { onUpdated: { addListener() {} }, onActivated: { addListener() {} } },
+      },
+    };
+    g.self = g; g.globalThis = g;
+
+    // importScripts must genuinely evaluate the two files INTO this scope, not
+    // borrow the page's copies. stage3.js closes over whatever `fetch` it was
+    // loaded with, so handing it the page's objects would leave it calling the
+    // page's fetch and never touching the stub below — which is exactly how an
+    // earlier version of this test failed with a JSON parse error against the
+    // route stub instead of exercising the handler.
+    const SOURCES = { "stage3_model.js": modelSrc, "stage3.js": libSrc };
+    g.importScripts = (...names) => {
+      for (const n of names) {
+        new Function("self", "globalThis", "fetch", "console", SOURCES[n])
+          .call(g, g, g, g.fetch, console);
+      }
+    };
+
+    new Function("self", "globalThis", "chrome", "importScripts", "fetch", "console",
+                 bgSrc).call(g, g, g, g.chrome, g.importScripts, g.fetch, console);
+
+    if (!handler) return { err: "no message handler registered" };
+    const res = await new Promise(resolve => {
+      handler({ type: "CHECK_LISTING", url: "https://apps.apple.com/ph/app/x/id123",
+                advertiserName: "Makati Loan Inc" }, {}, resolve);
+    });
+    return { res };
+  }, [await read("background.js"), await read("stage3_model.js"), await read("stage3.js")]);
+
+  const L = out.res && out.res.listing;
+  r.check("the handler responds ok", out.res && out.res.ok === true,
+          JSON.stringify(out.err || out.res).slice(0, 90));
+  // The assertion that was missing.
+  r.check("listing is FLAT, not double-wrapped",
+          !!L && L.listing === undefined, JSON.stringify(L).slice(0, 90));
+  r.check("developer reaches the popup", !!L && L.developer === "MAKATI LOAN, INC",
+          String(L && L.developer));
+  r.check("ratings reach the popup", !!L && /9,?000 ratings/.test(L.ratings || ""),
+          String(L && L.ratings));
+  r.check("last-updated reaches the popup", !!L && /^\d{4}-\d{2}-\d{2}$/.test(L.updated || ""),
+          String(L && L.updated));
+  r.check("a score reaches the popup", !!L && typeof L.pct === "number",
+          String(L && L.pct));
+}
+
 await page.close();
 await browser.close();
 process.exit(r.finish() ? 1 : 0);

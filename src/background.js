@@ -202,29 +202,32 @@ async function readListing(url, advertiserName) {
   const cacheKey = `${key}|${advertiserName || ""}`;
   if (listingCache.has(cacheKey)) return listingCache.get(cacheKey);
 
-  const S3 = self.CrediBytesStage3;
+  const S3 = globalThis.CrediBytesStage3;
   const L = /^id\d+$/i.test(key) ? await S3.fetchApple(key.slice(2))
                                  : await S3.fetchPlay(key);
 
   const feats = S3.buildFeatures3(L, advertiserName);
   const p = S3.score3(feats);
 
+  // Flat, NOT wrapped in { listing: ... }. The message handler already wraps
+  // this as { ok, listing }, so returning a wrapper here produced
+  // res.listing.listing and every field read undefined — the card rendered a
+  // single "Privacy policy: none listed" row, because that label is a constant
+  // string while everything else was missing.
   const out = {
-    listing: {
-      developer: L.developer,
-      // Installs where the store publishes them, ratings otherwise. Apple gives
-      // no install count at all, so showing "0 installs" there would be a
-      // fabrication rather than a measurement.
-      ratings: L.installs !== undefined
-        ? `${L.installs.toLocaleString()} installs`
-        : (L.reviews !== undefined ? `${L.reviews.toLocaleString()} ratings` : ""),
-      updated: L.updatedMs !== undefined
-        ? new Date(L.updatedMs).toISOString().slice(0, 10) : "",
-      privacy: !!L.policy,
-      privacyFree: !!L.policy && /(blogspot|wordpress\.com|sites\.google|weebly|wixsite|github\.io|firebaseapp|000webhost|blogger)/i.test(L.policy),
-      // Rounded for display only; the model saw the exact value.
-      pct: p === null ? null : Math.round(p * 100),
-    },
+    developer: L.developer,
+    // Installs where the store publishes them, ratings otherwise. Apple gives
+    // no install count at all, so showing "0 installs" there would be a
+    // fabrication rather than a measurement.
+    ratings: L.installs !== undefined
+      ? `${L.installs.toLocaleString()} installs`
+      : (L.reviews !== undefined ? `${L.reviews.toLocaleString()} ratings` : ""),
+    updated: L.updatedMs !== undefined
+      ? new Date(L.updatedMs).toISOString().slice(0, 10) : "",
+    privacy: !!L.policy,
+    privacyFree: !!L.policy && /(blogspot|wordpress\.com|sites\.google|weebly|wixsite|github\.io|firebaseapp|000webhost|blogger)/i.test(L.policy),
+    // Rounded for display only; the model saw the exact value.
+    pct: p === null ? null : Math.round(p * 100),
   };
 
   if (listingCache.size >= LISTING_CACHE_MAX) {
