@@ -30,8 +30,18 @@ const page = await browser.newPage();
 await page.route("**/*", route =>
   route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }));
 await page.goto("https://www.facebook.com/");
-// stage3.js publishes onto `self`, which is `window` in a page.
-await page.addScriptTag({ content: "window.self = window;" });
+// NOTE: no `self` shim here, deliberately.
+//
+// An earlier version of this suite did `window.self = window` before loading,
+// which made a page look enough like a worker to pass — and hid a defect that
+// broke the extension outright: the exported model assigned to `window`, the
+// service worker has no `window`, importScripts threw, and registration failed
+// with status code 15. The whole background script was dead, so scans stopped
+// being stored too.
+//
+// Both files now target globalThis, which is `window` in a page and `self` in a
+// worker. Loading them here with no shim proves the page half; the worker half
+// is asserted separately below.
 await page.addScriptTag({ content: await read("stage3_model.js") });
 await page.addScriptTag({ content: await read("stage3.js") });
 
@@ -185,6 +195,47 @@ await page.addScriptTag({ content: await read("stage3.js") });
   r.check("an all-missing listing still scores rather than throwing",
           typeof out.missing === "number" && out.missing >= 0 && out.missing <= 1,
           String(out.missing));
+}
+
+// ── It must load where it actually runs: a worker, with no `window` ─────────
+//
+// This is the assertion that was missing. background.js importScripts these two
+// files into an MV3 service worker, where `window` does not exist at all. A
+// bare `window.X = ...` throws there, aborts registration, and takes every
+// message handler and the scan store down with it — reported as "Service worker
+// registration failed. Status code: 15", which names nothing useful.
+{
+  const worker = await browser.newPage();
+  await worker.route("**/*", route =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }));
+  await worker.goto("https://www.facebook.com/");
+
+  const out = await worker.evaluate(async ([modelSrc, libSrc]) => {
+    // Evaluate both files in a scope where `window` is genuinely unreachable,
+    // standing in for the worker global scope.
+    const run = new Function("self", "globalThis", "window",
+      `"use strict";
+${modelSrc}
+${libSrc}
+return globalThis;`);
+    const fakeGlobal = {};
+    try {
+      run(fakeGlobal, fakeGlobal, undefined);
+    } catch (e) {
+      return { ok: false, err: String(e) };
+    }
+    return {
+      ok: true,
+      hasModel: !!fakeGlobal.CrediBytesStage3Model,
+      hasLib: typeof fakeGlobal.CrediBytesStage3 === "object",
+    };
+  }, [await read("stage3_model.js"), await read("stage3.js")]);
+
+  r.check("both files load with no `window` in scope", out.ok === true,
+          out.err || "");
+  r.check("the model attaches to the worker global", out.hasModel === true, "");
+  r.check("so does the feature builder", out.hasLib === true, "");
+  await worker.close();
 }
 
 await page.close();

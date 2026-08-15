@@ -191,7 +191,9 @@ function walk3(node, values) {
 }
 
 function score3(named) {
-  const model = self.CrediBytesStage3Model;
+  // globalThis: this file is imported by the service worker (self) and loaded
+  // into a page by the test harness (window). globalThis is both.
+  const model = globalThis.CrediBytesStage3Model;
   if (!model || !Array.isArray(model.trees)) return null;
   const values = model.features.map(f => {
     const v = named[f];
@@ -202,6 +204,6 @@ function score3(named) {
   return 1 / (1 + Math.exp(-raw));
 }
 
-self.CrediBytesStage3 = {
+globalThis.CrediBytesStage3 = {
   fetchPlay, fetchApple, buildFeatures3, score3, parsePlayDatasets, devMatches,
 };
