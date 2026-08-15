@@ -380,6 +380,42 @@ return globalThis;`);
           out.threw === true, String(out.threw));
 }
 
+// ── A string at the title path is not an app record ─────────────────────────
+//
+// Live bug: most Play responses carry the single letter "i" at exactly the
+// title path in ds:11. "First dataset with a non-empty string title" picked it,
+// and because "i" is non-empty the readability guard passed too — so the card
+// rendered one row and a confident percentage from a coincidence.
+//
+// Measured on the same page: ds:5 resolved 6 of 6 core fields, ds:11 resolved 1.
+{
+  const out = await page.evaluate(() => {
+    const S = window.CrediBytesStage3;
+    const mk = (title, dev, installs) => {
+      const rec = []; rec[1] = []; rec[1][2] = [];
+      rec[1][2][0] = [title];
+      if (dev) rec[1][2][68] = [dev];
+      if (installs !== undefined) rec[1][2][13] = [null, null, installs];
+      return rec;
+    };
+    // The decoy is enumerated FIRST, as it is on the live page.
+    const ds = {
+      "ds:11": mk("i"),
+      "ds:5": mk("Mega Peso-Fast Cash Easy Loan", "CEIMMARJ Financing Inc", 1636867),
+    };
+    const found = S.findAppDataset(ds);
+    return {
+      title: found && found[1][2][0][0],
+      decoyAlone: S.findAppDataset({ "ds:11": mk("i") }),
+    };
+  });
+
+  r.check("the richest dataset wins, not the first one with a string",
+          out.title === "Mega Peso-Fast Cash Easy Loan", String(out.title));
+  r.check("an uncorroborated title is refused outright",
+          out.decoyAlone === null, String(out.decoyAlone));
+}
+
 await page.close();
 await browser.close();
 process.exit(r.finish() ? 1 : 0);

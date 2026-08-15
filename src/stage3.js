@@ -81,20 +81,40 @@ function parsePlayDatasets(html) {
   return out;
 }
 
+// The fields that make a dataset the APP RECORD rather than something that
+// merely has a string where the title lives.
+const CORE_FIELDS = ["title", "developer", "realInstalls", "ratings", "updated"];
+
 /**
  * Find the dataset holding the app record.
  *
- * NOT hardcoded to ds:5. The index is Google's internal ordering and it varies
- * by response — pinning it produced a listing where every field came back empty
- * while the card still rendered, showing one row and a score built from nothing.
- * Identifying the dataset by its SHAPE survives a renumbering.
+ * NOT hardcoded to ds:5 — that index is Google's internal ordering and a
+ * renumbering would empty every field while the card still rendered.
+ *
+ * But "first dataset with a string title" is not enough either, and that was a
+ * live bug: on most listings ds:11 carries the single letter "i" at exactly the
+ * title path, so it won the scan and produced a card showing one row and a
+ * confident percentage. Measured on the same page:
+ *
+ *     ds:5    6/6 fields   'Cashify PH-Fast and Safe Cash'  3,199,675 installs
+ *     ds:11   1/6 fields   'i'
+ *
+ * So SCORE the candidates and take the richest, requiring the title to be
+ * corroborated by at least one other core field. A coincidental string cannot
+ * out-score a real record, and if the paths ever genuinely stop resolving we
+ * throw instead of reporting a listing built from one accident.
  */
 function findAppDataset(ds) {
+  let best = null, bestScore = 0;
   for (const key of Object.keys(ds)) {
-    const title = pathGet(ds[key], PLAY_SPEC.title);
-    if (typeof title === "string" && title.trim()) return ds[key];
+    const d = ds[key];
+    const title = pathGet(d, PLAY_SPEC.title);
+    if (typeof title !== "string" || !title.trim()) continue;
+    let score = 0;
+    for (const f of CORE_FIELDS) if (pathGet(d, PLAY_SPEC[f]) !== undefined) score++;
+    if (score > bestScore) { best = d; bestScore = score; }
   }
-  return null;
+  return bestScore >= 2 ? best : null;
 }
 
 async function fetchPlay(pkg) {
