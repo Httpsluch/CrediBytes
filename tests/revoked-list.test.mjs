@@ -55,6 +55,7 @@ async function matcherPage() {
     route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }));
   await page.goto("https://www.facebook.com/");
   await page.addScriptTag({ content: await read("i18n.js") });
+  await page.addScriptTag({ content: await read("verdict-view.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("revoked_reference.js") });
   await page.addScriptTag({ content: FIXTURE });
@@ -181,6 +182,7 @@ async function matcherPage() {
     </div>`);
   await page.addScriptTag({ content: CHROME_SHIM });
   await page.addScriptTag({ content: await read("i18n.js") });
+  await page.addScriptTag({ content: await read("verdict-view.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("revoked_reference.js") });
   await page.addScriptTag({ content: FIXTURE });
@@ -245,6 +247,7 @@ async function matcherPage() {
     `set:(o,cb)=>cb&&cb()},onChanged:{addListener(){}}},` +
     `runtime:{sendMessage:(m,cb)=>cb&&cb({ok:true}),getManifest:()=>({version:"1.2.0"})},` +
     `tabs:{query:(q,cb)=>cb([])},sidePanel:{open(){},setOptions(){return Promise.resolve();}}};` });
+  await page.addScriptTag({ path: SRC + "/verdict-view.js" });
   await page.addScriptTag({ path: SRC + "/popup.js" });
   await page.waitForTimeout(250);
 

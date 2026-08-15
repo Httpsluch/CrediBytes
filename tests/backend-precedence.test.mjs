@@ -54,6 +54,7 @@ async function run(delayMs, prediction) {
   await page.setContent(`<!doctype html><body>${AD}</body>`);
   await page.addScriptTag({ content: shim(delayMs, prediction) });
   await page.addScriptTag({ content: await read("i18n.js") });
+  await page.addScriptTag({ content: await read("verdict-view.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("stage1_model.js") });
   await page.addScriptTag({ content: await read("matcher.js") });

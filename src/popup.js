@@ -54,6 +54,9 @@ const FILTER_TIERS = {
 // Rendered in batches as the feed is scrolled rather than capped. The old fixed
 // RENDER_LIMIT existed because drawing every stored row at once stutters during
 // active scanning; batching solves that without hiding anything.
+// Drawn in the round/triangle badge on the right of each card.
+const VERDICT_MARK = { verified: "✓", unverified: "?", flagged: "!" };
+
 const BATCH = 40;
 
 let activeFilter  = null;
@@ -120,65 +123,42 @@ function timeAgo(ts) {
   return T("time.day", { n: Math.floor(s / 86400) });
 }
 
-/**
- * Circular progress ring for the Stage 1 profile score.
- *
- * The ring is coloured by VERDICT, not by score. Colouring it by score would
- * put a green ring on an unregistered app that happens to score well, which is
- * exactly the confusion this redesign is meant to remove — Stage 2 decides,
- * Stage 1 only describes.
- */
-function buildGauge(pct, tierCls) {
-  const wrap = el("div", "gauge");
-  const NS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(NS, "svg");
-  svg.setAttribute("width", "54"); svg.setAttribute("height", "54");
-  svg.setAttribute("viewBox", "0 0 54 54");
-
-  const R = 23, C = 2 * Math.PI * R;
-  for (const kind of ["gauge-track", "gauge-fill"]) {
-    const c = document.createElementNS(NS, "circle");
-    c.setAttribute("cx", "27"); c.setAttribute("cy", "27"); c.setAttribute("r", String(R));
-    c.setAttribute("fill", "none"); c.setAttribute("stroke-width", "5");
-    c.setAttribute("class", kind);
-    if (kind === "gauge-fill") {
-      c.setAttribute("stroke", `var(--v-${tierCls})`);
-      c.setAttribute("stroke-dasharray", String(C));
-      c.setAttribute("stroke-dashoffset", String(C * (1 - Math.max(0, Math.min(100, pct)) / 100)));
-    }
-    svg.appendChild(c);
-  }
-  wrap.appendChild(svg);
-  wrap.appendChild(el("div", "gauge-num", String(pct)));
-  return wrap;
-}
+// The Stage 1 profile gauge lived here. Removed with the card redesign: a
+// percentage beside a verdict reads as the verdict's confidence, which it never
+// was. Stage 1 still runs and is still recorded in each scan — it is simply no
+// longer drawn as though it decided anything.
 
 // ── Expanded analysis (Options A and B) ───────────────────────────────────────
 
 function buildDetail(scan) {
+  const V = window.CrediBytesVerdictView;
+  const view = V.present(scan, I18N ? I18N.getLang() : "en");
   const d = el("div", "scan-detail");
 
-  // A — what was actually checked, in order.
-  if (Array.isArray(scan.evidence) && scan.evidence.length) {
-    d.appendChild(el("p", "detail-h", T("sec.howChecked")));
-    const ul = el("ul", "ev-list");
-    for (const e of scan.evidence) {
-      const li = el("li", `ev-item ev-${e.state || "info"}`);
-      li.appendChild(el("span", "ev-icon",
-        e.state === "pass" ? "✓" : e.state === "fail" ? "✕" : "•"));
-      li.appendChild(el("span", null, TE(e)));
-      ul.appendChild(li);
-    }
-    d.appendChild(ul);
-  } else if (scan.reason) {
-    d.appendChild(el("p", "detail-h", T("ui.detailResult")));
-    d.appendChild(el("div", "contrib-note",
-      scan.reasonKey ? T(scan.reasonKey, scan.reasonParams) : scan.reason));
-  }
+  // ── HOW THIS WAS CHECKED ──────────────────────────────────────────────────
+  // Three fixed rows, always the same three questions: where does the link go,
+  // is the app declared, does the name match. The variable-length evidence trail
+  // this replaces was accurate but assumed the reader knew what a package id
+  // was — Panel 1 asked how a digitally or financially illiterate user would be
+  // informed, and a constant shape is learnable in a way a variable one is not.
+  d.appendChild(el("p", "detail-h", T("card.howChecked")));
+  const ul = el("ul", "check-list");
+  for (const line of view.checks) ul.appendChild(el("li", "check-item", line));
+  d.appendChild(ul);
 
-  // The registrant this ad resolved to, if any.
-  if (scan.company || scan.sec || scan.officialUrl) {
-    d.appendChild(el("p", "detail-h", T("ui.detailRegistrant")));
+  // ── WHAT THIS MEANS ───────────────────────────────────────────────────────
+  d.appendChild(el("p", "detail-h", T("card.whatMeans")));
+  d.appendChild(el("div", "detail-body", view.means));
+
+  // ── RECOMMENDED ACTION ────────────────────────────────────────────────────
+  d.appendChild(el("p", "detail-h", T("card.action")));
+  d.appendChild(el("div", "detail-body", view.action));
+
+  // The registrant's real declared channels, so a user can compare the ad
+  // against where the genuine article lives. Only for a confirmed match — under
+  // a possible match these would read as though the identity were settled.
+  if ((view.tier === "legitimate" || view.tier === "revoked") &&
+      (scan.sec || scan.officialUrl)) {
     const dl = el("dl", "kv");
     const put = (k, v, link) => {
       if (!v) return;
@@ -192,16 +172,14 @@ function buildDetail(scan) {
       } else dd.textContent = v;
       dl.appendChild(dd);
     };
-    put(T("row.company"), scan.company);
     put(T("row.secNo"), scan.sec);
     put(T("row.officialSite"), scan.officialUrl, true);
-    d.appendChild(dl);
+    if (dl.childElementCount) d.appendChild(dl);
   }
 
-  // The SEC revoked / suspended list. The two paths are rendered differently on
-  // purpose: one reports a fact about this advertisement, the other reports a
-  // coincidence of names. Collapsing them into one block is how an advisory
-  // would start reading as a finding.
+  // ── SEC revoked list ──────────────────────────────────────────────────────
+  // Kept verbatim from before: the two paths must stay distinguishable, because
+  // one reports a fact about this ad and the other a coincidence of names.
   if (scan.revoked) {
     const rv = scan.revoked;
     d.appendChild(el("p", "detail-h",
@@ -214,51 +192,77 @@ function buildDetail(scan) {
       T(rv.verdict ? "note.revokedVerdict" : "note.revokedAdvisory")));
   }
 
-  // A fuzzy name suggestion is NEVER a verification — labelled as such.
-  if (!scan.sec && scan.suggestion && scan.suggestion.company) {
-    d.appendChild(el("p", "detail-h", T("ui.detailClosest")));
-    const dl = el("dl", "kv");
-    dl.appendChild(el("dt", null, T("row.company")));
-    dl.appendChild(el("dd", null, scan.suggestion.company));
-    if (scan.suggestion.sec) {
-      dl.appendChild(el("dt", null, T("row.secNo")));
-      dl.appendChild(el("dd", null, scan.suggestion.sec));
-    }
-    d.appendChild(dl);
-  }
+  // ── Stage 3, on request ───────────────────────────────────────────────────
+  // Only for store links, and only when the user asks. Fetching a store listing
+  // for every ad scrolled past would mean hundreds of requests per session,
+  // which Google rate-limits, and would have the browser silently contacting
+  // Google about every app a user sees. One deliberate click removes both
+  // problems, and makes a failed read visible instead of silent.
+  if (scan.isStoreUrl && scan.destUrl) {
+    const wrap = el("div", "listing-check");
+    const btn = el("button", "listing-btn", T("btn.checkListing"));
+    btn.type = "button";
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();                       // never toggle the card
+      btn.disabled = true;
+      btn.textContent = T("btn.checking");
 
-  // B — why the profile score is what it is.
-  if (scan.prob != null) {
-    d.appendChild(el("p", "detail-h", T("sec.profileSignalSupp")));
-    if (Array.isArray(scan.contributions) && scan.contributions.length) {
-      const box = el("div", "contrib");
-      for (const c of scan.contributions.slice(0, 4)) {
-        const row = el("div", `contrib-row ${c.points >= 0 ? "contrib-pos" : "contrib-neg"}`);
-        row.appendChild(el("span", "contrib-pts", `${c.points > 0 ? "+" : ""}${c.points}`));
-        row.appendChild(el("span", "contrib-label",
-          c.labelKey ? T(c.labelKey, c.labelParams) : c.label));
-        box.appendChild(row);
+      const go = () => chrome.runtime.sendMessage(
+        { type: "CHECK_LISTING", url: scan.destUrl },
+        (res) => {
+          btn.remove();
+          wrap.appendChild(res && res.ok ? buildListing(res.listing)
+                                         : el("div", "listing-fail", T("btn.failed")));
+        });
+
+      // Store access is an OPTIONAL permission, requested here rather than held
+      // from install. The extension has no business reaching play.google.com
+      // until a user asks it to read a specific listing, and Chrome shows the
+      // prompt at the moment the reason for it is on screen. Declining leaves
+      // everything else working.
+      const origins = ["https://play.google.com/*", "https://itunes.apple.com/*"];
+      if (chrome.permissions && chrome.permissions.request) {
+        chrome.permissions.request({ origins }, (granted) => {
+          if (granted) return go();
+          btn.remove();
+          wrap.appendChild(el("div", "listing-fail", T("btn.failed")));
+        });
+      } else {
+        go();
       }
-      d.appendChild(box);
-    }
-    d.appendChild(el("div", "contrib-note",
-      "Points show how far each signal moves the score against a typical " +
-      "registrant. This score describes the advertiser's name profile only — " +
-      "it never decides the verdict above."));
+    });
+    wrap.appendChild(btn);
+    d.appendChild(wrap);
   }
 
   return d;
 }
 
-// ── Cards ─────────────────────────────────────────────────────────────────────
+/** Renders whatever the store actually returned. */
+function buildListing(L) {
+  const box = el("div", "listing");
+  box.appendChild(el("p", "detail-h", T("listing.heading")));
+  const ul = el("ul", "check-list");
+  const add = (key, value) => { if (value != null && value !== "") ul.appendChild(el("li", "check-item", T(key, { value }))); };
+  add("listing.developer", L.developer);
+  add("listing.ratings", L.ratings);
+  add("listing.updated", L.updated);
+  add("listing.privacy", T(L.privacyFree ? "listing.privacyFree"
+                            : L.privacy ? "listing.privacyOk" : "listing.privacyNone"));
+  box.appendChild(ul);
+  if (typeof L.pct === "number") {
+    box.appendChild(el("div", "detail-body", T("listing.verdict", { pct: L.pct })));
+  }
+  box.appendChild(el("div", "contrib-note", T("listing.note")));
+  return box;
+}
 
 function buildCard(scan) {
-  const tier = tierOf(scan);
-  // Renamed from T: a module-level T() is now the translate helper, and a
-  // local shadow would silently break any translation added inside here.
-  const tierInfo = TIERS[tier];
+  const V = window.CrediBytesVerdictView;
+  const view = V.present(scan, I18N ? I18N.getLang() : "en");
+  const tier = view.tier;
 
-  const item = el("div", `scan-item ${tierInfo.cls}`);
+  const item = el("div", `scan-item ${TIERS[tier].cls} ${view.cls}`);
   item.tabIndex = 0;
   item.setAttribute("role", "button");
   item.setAttribute("aria-expanded", "false");
@@ -266,17 +270,27 @@ function buildCard(scan) {
   const head = el("div", "scan-head");
   const main = el("div", "scan-main");
 
-  main.appendChild(el("div", "scan-title", scan.advertiserName || scan.company || "Unknown advertiser"));
-  // reasonKey first: `reason` is frozen in whatever language the scan was
-  // recorded in, so rendering it directly would leave old cards untranslated.
-  const reasonText = scan.reasonKey ? T(scan.reasonKey, scan.reasonParams) : scan.reason;
-  if (reasonText) main.appendChild(el("div", "scan-reason", reasonText));
+  main.appendChild(el("div", "scan-title",
+    scan.advertiserName || scan.company || "Unknown advertiser"));
 
-  if (!scan.sec && scan.suggestion && scan.suggestion.company) {
-    main.appendChild(el("div", "scan-hint",
-      `Possible match (unverified): ${scan.suggestion.company}` +
-      (scan.suggestion.sec ? ` · SEC ${scan.suggestion.sec}` : "")));
-  }
+  // Two labelled lines instead of a prose sentence. The old card led with the
+  // matcher's reason, which is precise but assumes the reader knows what a
+  // package id is; Panel 1 asked how a digitally or financially illiterate user
+  // would be informed. Registration status and company are the two things such
+  // a user is actually deciding on.
+  const reg = el("div", "scan-line");
+  reg.appendChild(el("span", "scan-line-k", view.regLabel));
+  reg.appendChild(el("span", "scan-line-v", " " + view.status));
+  main.appendChild(reg);
+
+  const co = el("div", "scan-line");
+  co.appendChild(el("span", "scan-line-k", view.companyLabel));
+  co.appendChild(el("span", "scan-line-v", " " + view.company));
+  main.appendChild(co);
+
+  // The one-line instruction, which is what the short card exists to deliver.
+  main.appendChild(el("div", "scan-advice", view.action));
+
   // data-ts lets the ticker below refresh the text in place. Re-rendering the
   // whole feed once a minute would tear down every expanded card the user had
   // open, and costs far more than rewriting a handful of strings.
@@ -285,15 +299,14 @@ function buildCard(scan) {
   main.appendChild(time);
   head.appendChild(main);
 
-  // Gauge when a profile score exists, verdict mark when it does not.
+  // Icon plus word. The profile-score gauge that used to sit here was removed:
+  // it invited the reading the whole system is built to avoid — a number next to
+  // a verdict looks like the verdict's confidence, and it is not. Stage 1 still
+  // runs and is still recorded; it is simply no longer shown as though it
+  // decided anything.
   const side = el("div", "scan-side");
-  if (scan.prob != null) {
-    side.appendChild(buildGauge(Math.round(scan.prob * 100), tierInfo.cls));
-    side.appendChild(el("span", "gauge-cap", T("ui.profileCap")));
-  } else {
-    side.appendChild(el("div", "scan-mark", tierInfo.mark));
-    side.appendChild(el("span", "scan-mark-label", T(tierInfo.labelKey)));
-  }
+  side.appendChild(el("div", "verdict-icon " + view.cls, VERDICT_MARK[view.state]));
+  side.appendChild(el("span", "verdict-word " + view.cls, view.stateLabel));
   head.appendChild(side);
   item.appendChild(head);
 

@@ -25,6 +25,7 @@ const check = (n, c, d) => results.push({ n, pass: !!c, d });
   await page.setContent(`<!doctype html><body>${KVIKU}</body>`);
   await page.addScriptTag({ content: CHROME_SHIM });
   await page.addScriptTag({ content: await read("i18n.js") });
+  await page.addScriptTag({ content: await read("verdict-view.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("matcher.js") });
   await page.addScriptTag({ content: await read("content.js") });
@@ -83,6 +84,7 @@ for (const [w, h] of [[359, 900], [367, 700], [500, 800]]) {
   await page.route("**/popup.js", r => r.fulfill({ status:200, contentType:"text/javascript", body:"" }));
   await page.goto(srcUrl("popup.html"));
   await page.addScriptTag({ content: `window.chrome={storage:{local:{get:(k,cb)=>cb({scans:${JSON.stringify(scans)},settings:{}}),set:(o,cb)=>cb&&cb()},onChanged:{addListener(){}}},runtime:{sendMessage:(m,cb)=>cb&&cb({ok:true})},tabs:{query:(q,cb)=>cb([])},sidePanel:{open(){},setOptions(){return Promise.resolve();}}};` });
+  await page.addScriptTag({ path: SRC + "/verdict-view.js" });
   await page.addScriptTag({ path: SRC + "/popup.js" });
   await page.waitForTimeout(200);
   const t1 = await page.textContent(".scan-time");

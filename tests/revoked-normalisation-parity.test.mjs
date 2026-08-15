@@ -39,6 +39,7 @@ await page.route("**/*", route =>
   route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }));
 await page.goto("https://www.facebook.com/");
 await page.addScriptTag({ content: await read("i18n.js") });
+  await page.addScriptTag({ content: await read("verdict-view.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
 await page.addScriptTag({ content: await read("revoked_reference.js") });
 await page.addScriptTag({ content: await read("matcher.js") });

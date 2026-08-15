@@ -34,6 +34,7 @@ for (const [label, html, expectName] of [
   await page.setContent(`<!doctype html><body style="background:#fff">${html}</body>`);
   await page.addScriptTag({ content: CHROME_SHIM });
   await page.addScriptTag({ content: await read("i18n.js") });
+  await page.addScriptTag({ content: await read("verdict-view.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("matcher.js") });
   await page.addScriptTag({ content: await read("content.js") });
@@ -71,6 +72,7 @@ for (const [label, html, expectName] of [
       <strong>Like</strong></div></body>`);
   await page.addScriptTag({ content: CHROME_SHIM });
   await page.addScriptTag({ content: await read("i18n.js") });
+  await page.addScriptTag({ content: await read("verdict-view.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("matcher.js") });
   await page.addScriptTag({ content: await read("content.js") });

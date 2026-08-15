@@ -92,6 +92,7 @@ const browser = await chromium.launch({ headless: true });
   await page.setContent(`<!doctype html><body>${AD}</body>`);
   await page.addScriptTag({ content: DEAD_BACKEND_SHIM });
   await page.addScriptTag({ content: await read("i18n.js") });
+  await page.addScriptTag({ content: await read("verdict-view.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("stage1_model.js") });
   await page.addScriptTag({ content: await read("matcher.js") });
@@ -124,9 +125,14 @@ const browser = await chromium.launch({ headless: true });
   r.check("local model fills in when the backend never answers",
           typeof res.prob === "number" && !!res.riskDesc,
           `prob=${res.prob} desc=${res.riskDesc}`);
-  r.check("badge detail shows the profile signal",
-          /Profile score: \d+%/.test(res.detailText),
-          res.detailText.slice(0, 90));
+  // The score is no longer DISPLAYED — a percentage beside a verdict reads as
+  // that verdict's confidence, and it never was one. It is still computed and
+  // still recorded on the scan (asserted just above), because Stage 1 is the
+  // deployed model and dropping it would be a different decision entirely.
+  r.check("the profile score is recorded but not shown on the badge",
+          !/Profile score: \d+%/.test(res.detailText) &&
+          typeof res.prob === "number",
+          `prob=${res.prob} detail=${res.detailText.slice(0, 60)}`);
   await page.close();
 }
 
@@ -137,6 +143,7 @@ const browser = await chromium.launch({ headless: true });
   // stage1_model.js deliberately NOT loaded.
   await page.addScriptTag({ content: DEAD_BACKEND_SHIM });
   await page.addScriptTag({ content: await read("i18n.js") });
+  await page.addScriptTag({ content: await read("verdict-view.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("matcher.js") });
   await page.addScriptTag({ content: await read("stage1.js") });

@@ -26,6 +26,7 @@ const browser = await chromium.launch({ headless: true });
     route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }));
   await page.goto("https://www.facebook.com/");
   await page.addScriptTag({ content: await read("i18n.js") });
+  await page.addScriptTag({ content: await read("verdict-view.js") });
   await page.addScriptTag({ content: await read("sec_reference.js") });
   await page.addScriptTag({ content: await read("matcher.js") });
 
@@ -203,6 +204,7 @@ const browser = await chromium.launch({ headless: true });
     `window.chrome={storage:{local:{get:(k,cb)=>cb({scans:${JSON.stringify(scans)},totals:null,settings:{}}),set:(o,cb)=>cb&&cb()},onChanged:{addListener(){}}},` +
     `runtime:{sendMessage:(m,cb)=>cb&&cb({ok:true}),getManifest:()=>({version:"1.2.0"})},tabs:{query:(q,cb)=>cb([])},` +
     `sidePanel:{open(){},setOptions(){return Promise.resolve();}}};` });
+  await page.addScriptTag({ path: SRC + "/verdict-view.js" });
   await page.addScriptTag({ path: SRC + "/popup.js" });
   await page.waitForTimeout(250);
 
@@ -210,10 +212,16 @@ const browser = await chromium.launch({ headless: true });
     cards: document.querySelectorAll(".scan-item").length,
     detail: !!document.querySelector(".scan-detail"),
     gauge: !!document.querySelector(".gauge"),
+    verdictWord: document.querySelector(".verdict-word")?.textContent || "",
     expanded: document.querySelector(".scan-item")?.getAttribute("aria-expanded"),
   }));
   r.check("card rendered", before.cards === 1, JSON.stringify(before));
-  r.check("gauge shown when a profile score exists", before.gauge === true, "");
+  // The gauge was removed with the card redesign — a percentage beside a
+  // verdict reads as that verdict's confidence, which it never was. The card
+  // now shows an icon and a word.
+  r.check("verdict icon shown instead of a gauge",
+          before.gauge === false && before.verdictWord === "UNVERIFIED",
+          JSON.stringify(before));
   r.check("analysis is collapsed initially", before.detail === false, "");
   r.check("collapsed state announced", before.expanded === "false", String(before.expanded));
 
@@ -223,18 +231,30 @@ const browser = await chromium.launch({ headless: true });
     return {
       detail: !!d,
       text: d ? d.textContent : "",
-      evItems: document.querySelectorAll(".ev-item").length,
+      cardText: document.querySelector(".scan-item")?.textContent || "",
+      checkItems: document.querySelectorAll(".check-item").length,
       contribRows: document.querySelectorAll(".contrib-row").length,
       expanded: document.querySelector(".scan-item")?.getAttribute("aria-expanded"),
     };
   });
   r.check("clicking a card opens the analysis", after.detail === true, "");
   r.check("expanded state announced", after.expanded === "true", String(after.expanded));
-  r.check("evidence trail rendered", after.evItems === 2, `items=${after.evItems}`);
-  r.check("score contributions rendered", after.contribRows === 1, `rows=${after.contribRows}`);
-  r.check("registrant details shown", /CS2021030008899/.test(after.text), after.text.slice(0, 90));
-  r.check("score is labelled supplementary",
-          /supplementary/i.test(after.text), after.text.slice(0, 120));
+  // The free-form trail became three fixed rows: where the link goes, whether
+  // the app is declared, whether the name matches. Constant shape, so a
+  // non-expert learns it once.
+  r.check("three fixed check rows rendered", after.checkItems === 3,
+          `items=${after.checkItems}`);
+  r.check("no score points are shown any more", after.contribRows === 0,
+          `rows=${after.contribRows}`);
+  // A possible match names the registrant but NOT its SEC number — printing
+  // the number beside an unconfirmed match makes a guess look like a finding.
+  r.check("possible match names the registrant without its SEC number",
+          /Possible match/.test(after.cardText) &&
+          /Super-Space PH Lending Inc/.test(after.cardText) &&
+          !/CS2021030008899/.test(after.cardText), after.cardText.slice(0, 140));
+  r.check("the three sections are present",
+          /HOW THIS WAS CHECKED/.test(after.text) && /WHAT THIS MEANS/.test(after.text) &&
+          /RECOMMENDED ACTION/.test(after.text), after.text.slice(0, 140));
 
   await page.click(".scan-item");
   const closed = await page.evaluate(() => !!document.querySelector(".scan-detail"));
@@ -282,7 +302,7 @@ const browser = await chromium.launch({ headless: true });
       tabs: { query: (q, cb) => cb([]) },
       sidePanel: { open() {}, setOptions() { return Promise.resolve(); } },
     };` });
-  for (const f of ["i18n.js", "sec_reference.js", "stage1_model.js", "matcher.js", "stage1.js", "content.js"]) {
+  for (const f of ["i18n.js", "verdict-view.js", "sec_reference.js", "stage1_model.js", "matcher.js", "stage1.js", "content.js"]) {
     await page.addScriptTag({ content: await read(f) });
   }
   await page.waitForTimeout(3400);

@@ -39,13 +39,17 @@ async function open(settings) {
     route.fulfill({ status: 200, contentType: "text/javascript", body: "" }));
   await page.goto(srcUrl("popup.html"));
   await page.addScriptTag({ content: shim(settings) });
+  await page.addScriptTag({ path: SRC + "/verdict-view.js" });
   await page.addScriptTag({ path: SRC + "/popup.js" });
   await page.waitForTimeout(250);
   return page;
 }
 
 const visible = (page) => page.$$eval(".scan-item",
-  els => els.map(e => e.className.replace("scan-item ", "")));
+  // Only the TIER class matters here. Cards also carry a cb-v-* display class
+  // now (three shown states over six tiers), and asserting the raw className
+  // would make this test fail on a presentation change rather than a filter one.
+  els => els.map(e => [...e.classList].find(c => !c.startsWith("cb-v-") && c !== "scan-item")));
 
 // ── Filters ────────────────────────────────────────────────────────────────
 {
@@ -102,6 +106,7 @@ const visible = (page) => page.$$eval(".scan-item",
       set:(o,cb)=>cb&&cb()},onChanged:{addListener(){}}},
       runtime:{id:"t",sendMessage:(m,cb)=>cb&&cb({ok:true})},
       tabs:{query:(q,cb)=>cb([])},sidePanel:{open(){},setOptions(){return Promise.resolve();}}};` });
+  await page.addScriptTag({ path: SRC + "/verdict-view.js" });
   await page.addScriptTag({ path: SRC + "/popup.js" });
   await page.waitForTimeout(200);
   await page.click('.stat[data-filter="unregistered"]');
@@ -161,6 +166,7 @@ const visible = (page) => page.$$eval(".scan-item",
           preScript === "dark", String(preScript));
 
   await page.addScriptTag({ content: shim({ theme: "dark" }) });
+  await page.addScriptTag({ path: SRC + "/verdict-view.js" });
   await page.addScriptTag({ path: SRC + "/popup.js" });
   await page.waitForTimeout(200);
   await page.click('.tab[data-tab="settings"]');
@@ -178,6 +184,7 @@ const visible = (page) => page.$$eval(".scan-item",
     route.fulfill({ status: 200, contentType: "text/javascript", body: "" }));
   await page.goto(srcUrl("popup.html"));
   await page.addScriptTag({ content: shim({ theme: "light" }) });
+  await page.addScriptTag({ path: SRC + "/verdict-view.js" });
   await page.addScriptTag({ path: SRC + "/popup.js" });
   await page.waitForTimeout(200);
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);

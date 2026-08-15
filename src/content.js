@@ -767,16 +767,24 @@
 
     // Option A: the ordered record of what the matcher checked. A verdict that
     // shows its working can be argued with; a bare sentence cannot.
-    const trail = Array.isArray(matchResult.evidence) ? matchResult.evidence : [];
-    if (trail.length) {
-      addSection(T("sec.howChecked"));
-      for (const e of trail) {
-        const mark = e.state === "pass" ? "✓ " : e.state === "fail" ? "✕ " : "• ";
-        addRow("", mark + TE(e));
-      }
-    } else {
-      addRow("", reason);
-    }
+    // The badge renders exactly what the popup card renders, from the same
+    // module. These two have drifted apart twice already — verdictOf() was
+    // duplicated, and so was the SAVE_SCAN payload.
+    const view = window.CrediBytesVerdictView.present({
+      tier: verdictOf(legitimacy, status, store).cls.replace(/^cb-/, ""),
+      legitimacy, status, isStoreUrl: store,
+      company: ref?.company || "", sec: ref?.sec || "",
+      destHost: landingHost, suggestion,
+    }, settings.lang);
+
+    addSection(T("card.howChecked"));
+    for (const line of view.checks) addRow("", "• " + line);
+
+    addSection(T("card.whatMeans"));
+    addRow("", view.means);
+
+    addSection(T("card.action"));
+    addRow("", view.action);
 
     // Every channel the registrant actually declared to the SEC. When the ad's
     // own link could not be verified, these are what the user should compare
@@ -840,33 +848,11 @@
       addRow("", T("note.fromCaption", { host: landingHost }));
     }
 
-    const contribs = stage1Result?.contributions || [];
-    if (riskDesc) {
-      addSection(T("sec.profileSignalSupp"));
-      // riskDesc from the model stays English so it matches the backend
-      // character for character (verify_export.py). Re-derive it for display so
-      // the user sees their language without breaking that parity.
-      addRow("", stage1Result?.risk_label
-        ? T("risk.desc." + stage1Result.risk_label, { pct: Math.round((prob ?? 0) * 100) })
-        : riskDesc);
-      // Option B: a bare "23%" invited exactly the wrong reading next to a
-      // green verdict. These say which signal moved it and by how much.
-      for (const c of contribs.slice(0, 3)) {
-        // labelKey, not label: stage1.js resolves `label` once at explain() time
-        // using i18n's current language, which is not necessarily the user's.
-        // Rendering from the key here means the breakdown follows settings.lang
-        // like every other line on the badge.
-        const text = c.labelKey ? T(c.labelKey, c.labelParams) : c.label;
-        addRow("", `${c.points > 0 ? "+" : ""}${c.points} pts   ${text}`);
-      }
-      if (contribs.length) addRow("", T("note.contributions"));
-    } else if (isApp !== null) {
-      // Fallback for older backend responses that don't yet return risk_desc
-      addSection(T("sec.profileSignal"));
-      addRow("", "Profile score: " + Math.round((prob ?? 0) * 100) + "% — " +
-        (isApp ? "profile matches patterns of SEC-registered OLA platforms."
-               : "profile does not match typical patterns of SEC-registered OLA platforms."));
-    }
+    // The Stage 1 profile score was rendered here. Removed with the redesign:
+    // a percentage beside a verdict reads as that verdict's confidence, and it
+    // never was one — a MegaPeso ad verified by exact Apple ID displayed 23%.
+    // The model still runs and its output is still stored on the scan; it is
+    // simply no longer shown as though it decided anything.
 
     const setExpanded = (open) => {
       detail.hidden = !open;

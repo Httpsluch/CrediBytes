@@ -111,7 +111,7 @@ const browser = await chromium.launch({ headless: true });
   await page.route("**/*", route =>
     route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }));
   await page.goto("https://www.facebook.com/");
-  for (const f of ["i18n.js", "sec_reference.js", "revoked_reference.js", "matcher.js"])
+  for (const f of ["i18n.js", "verdict-view.js", "sec_reference.js", "revoked_reference.js", "matcher.js"])
     await page.addScriptTag({ content: await read(f) });
 
   const out = await page.evaluate(() => {
@@ -177,7 +177,7 @@ const browser = await chromium.launch({ headless: true });
          runtime:{id:"t",lastError:null,sendMessage(m,cb){window.__sent.push(m);cb&&cb({ok:true});}},
          tabs:{query:(q,cb)=>cb([])},
          sidePanel:{open(){},setOptions(){return Promise.resolve();}}};` });
-    for (const f of ["i18n.js", "sec_reference.js", "revoked_reference.js",
+    for (const f of ["i18n.js", "verdict-view.js", "sec_reference.js", "revoked_reference.js",
                      "stage1_model.js", "matcher.js", "stage1.js", "content.js"])
       await page.addScriptTag({ content: await read(f) });
     await page.waitForTimeout(3400);
@@ -192,10 +192,14 @@ const browser = await chromium.launch({ headless: true });
     });
 
     r.check(`badge bar renders in ${lang}`, expect.test(got.bar), got.bar);
-    r.check(`evidence trail renders in ${lang}`,
-            lang === "en" ? /is declared by/.test(got.detail)
-                          : /ay idineklara ng/.test(got.detail),
-            got.detail.slice(0, 120));
+    // The badge now renders the three fixed check rows, translated, rather than
+    // the matcher's variable-length trail.
+    r.check(`badge sections render in ${lang}`,
+            lang === "en" ? /HOW THIS WAS CHECKED/.test(got.detail) &&
+                            /Matches the SEC-registered/.test(got.detail)
+                          : /PAANO ITO SINURI/.test(got.detail) &&
+                            /Tumutugma sa OLA/.test(got.detail),
+            got.detail.slice(0, 140));
     // The tier is what background.js counts and popup.js colours by. It must be
     // the same identifier in both languages.
     r.check(`tier is language-independent (${lang})`,
@@ -224,6 +228,7 @@ const browser = await chromium.launch({ headless: true });
        runtime:{sendMessage:(m,cb)=>cb&&cb({ok:true}),getManifest:()=>({version:"1.2.0"})},
        tabs:{query:(q,cb)=>cb([])},
        sidePanel:{open(){},setOptions(){return Promise.resolve();}}};` });
+  await page.addScriptTag({ path: SRC + "/verdict-view.js" });
   await page.addScriptTag({ path: SRC + "/popup.js" });
   await page.waitForTimeout(200);
 
@@ -305,7 +310,7 @@ const browser = await chromium.launch({ headless: true });
        onChanged:{addListener(fn){window.__listeners.push(fn);}}},
        runtime:{id:"t",lastError:null,sendMessage(m,cb){window.__sent.push(m);cb&&cb({ok:true});}},
        tabs:{query:(q,cb)=>cb([])},sidePanel:{open(){},setOptions(){return Promise.resolve();}}};` });
-  for (const f of ["i18n.js", "sec_reference.js", "revoked_reference.js",
+  for (const f of ["i18n.js", "verdict-view.js", "sec_reference.js", "revoked_reference.js",
                    "stage1_model.js", "matcher.js", "stage1.js", "content.js"])
     await page.addScriptTag({ content: await read(f) });
   await page.waitForTimeout(3400);
@@ -381,7 +386,7 @@ const browser = await chromium.launch({ headless: true });
        onChanged:{addListener(){}}},
        runtime:{id:"t",lastError:null,sendMessage(m,cb){window.__sent.push(m);cb&&cb({ok:true});}},
        tabs:{query:(q,cb)=>cb([])},sidePanel:{open(){},setOptions(){return Promise.resolve();}}};` });
-  for (const f of ["i18n.js", "sec_reference.js", "revoked_reference.js",
+  for (const f of ["i18n.js", "verdict-view.js", "sec_reference.js", "revoked_reference.js",
                    "stage1_model.js", "matcher.js", "stage1.js", "content.js"])
     await page.addScriptTag({ content: await read(f) });
   await page.waitForTimeout(3400);
@@ -404,24 +409,24 @@ const browser = await chromium.launch({ headless: true });
        set:(o,cb)=>cb&&cb()},onChanged:{addListener(){}}},
        runtime:{sendMessage:(m,cb)=>cb&&cb({ok:true}),getManifest:()=>({version:"1.2.0"})},
        tabs:{query:(q,cb)=>cb([])},sidePanel:{open(){},setOptions(){return Promise.resolve();}}};` });
+  await pop.addScriptTag({ path: SRC + "/verdict-view.js" });
   await pop.addScriptTag({ path: SRC + "/popup.js" });
   await pop.waitForTimeout(250);
 
   const inEnglish = await pop.evaluate(() => {
     document.querySelector(".scan-item")?.click();
     return {
-      reason: document.querySelector(".scan-reason")?.textContent || "",
-      trail: [...document.querySelectorAll(".ev-item")].map(x => x.textContent).join(" | "),
-      tier: document.querySelector(".scan-mark-label")?.textContent || "",
+      card: document.querySelector(".scan-item")?.textContent || "",
+      word: document.querySelector(".verdict-word")?.textContent || "",
     };
   });
 
-  r.check("the card reason reads in English",
-          /Play Store package ID matches/.test(inEnglish.reason) &&
-          !/Tumutugma/.test(inEnglish.reason), inEnglish.reason.slice(0, 70));
-  r.check("the stored trail reads in English too",
-          /is declared by/.test(inEnglish.trail) && !/idineklara/.test(inEnglish.trail),
-          inEnglish.trail.slice(0, 90));
+  r.check("the card reads in English",
+          /SEC Registration/.test(inEnglish.card) && !/Rehistrasyon/.test(inEnglish.card),
+          inEnglish.card.slice(0, 90));
+  r.check("the expanded sections read in English too",
+          /HOW THIS WAS CHECKED/.test(inEnglish.card) &&
+          !/PAANO ITO SINURI/.test(inEnglish.card), inEnglish.card.slice(0, 120));
 
   // And back again, from the control itself.
   await pop.click('.tab[data-tab="settings"]');
@@ -429,10 +434,10 @@ const browser = await chromium.launch({ headless: true });
   await pop.waitForTimeout(200);
   const backToTl = await pop.evaluate(() => {
     document.querySelector('.tab[data-tab="scans"]').click();
-    return document.querySelector(".scan-reason")?.textContent || "";
+    return document.querySelector(".scan-item")?.textContent || "";
   });
-  r.check("switching back returns it to Tagalog", /Tumutugma/.test(backToTl),
-          backToTl.slice(0, 70));
+  r.check("switching back returns it to Tagalog", /Rehistrasyon sa SEC/.test(backToTl),
+          backToTl.slice(0, 90));
   await pop.close();
 }
 

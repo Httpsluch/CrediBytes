@@ -20,6 +20,7 @@
       ],
       "js": [
         "src/i18n.js",
+        "src/verdict-view.js",
         "src/sec_reference.js",
         "src/revoked_reference.js",
         "src/stage1_model.js",
@@ -50,5 +51,9 @@
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "optional_host_permissions": [
+    "https://play.google.com/*",
+    "https://itunes.apple.com/*"
+  ]
 }
