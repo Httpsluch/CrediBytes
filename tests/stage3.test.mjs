@@ -416,6 +416,76 @@ return globalThis;`);
           out.decoyAlone === null, String(out.decoyAlone));
 }
 
+// ── Data safety: the developer's declaration, quoted not judged (P3-6a) ─────
+//
+// Fixture markup mirrors the live page: <h2> sections, <h3> categories, and the
+// subtypes in the div that follows. Class names are deliberately WRONG here —
+// the parser must not depend on Google's obfuscated build output.
+{
+  const out = await page.evaluate(() => {
+    const S = window.CrediBytesStage3;
+    const juanhand = `
+      <h1 class="Xyz">Data safety</h1>
+      <h2 class="q">No data shared with third parties</h2><div>The developer says…</div>
+      <h2 class="q">Data collected</h2><div>Data this app may collect</div>
+      <h3 class="zzz">Messages</h3><div class="yyy">Emails and SMS or MMS</div>
+      <h3 class="zzz">Location</h3><div class="yyy">Approximate location and Precise location</div>
+      <h3 class="zzz">Personal info</h3><div class="yyy">Name, Email address, Phone number</div>
+      <h3 class="zzz">App info and performance</h3><div class="yyy">Crash logs</div>
+      <h2 class="q">Security practices</h2><div>…</div>
+      <h3 class="zzz">Data is encrypted in transit</h3><div>Your data is transferred…</div>
+      <h3 class="zzz">You can request that data be deleted</h3><div>The developer provides…</div>`;
+    const shared = `
+      <h1>Data safety</h1>
+      <h2>Data shared with third parties</h2><div>x</div>
+      <h3>Contacts</h3><div>Contacts</div>
+      <h2>Data collected</h2><div>x</div>
+      <h3>Financial info</h3><div>User payment info</div>`;
+    const clean = `
+      <h1>Data safety</h1>
+      <h2>No data shared with third parties</h2><div>x</div>
+      <h2>No data collected</h2><div>x</div>
+      <h2>Security practices</h2><div>x</div>
+      <h3>Data is encrypted in transit</h3><div>y</div>`;
+    return {
+      j: S.parseDataSafety(juanhand),
+      s: S.parseDataSafety(shared),
+      c: S.parseDataSafety(clean),
+      notAPage: S.parseDataSafety("<h3>Contacts</h3><div>Contacts</div>"),
+    };
+  });
+
+  r.check("collected categories are read in order",
+          out.j.collected.map(e => e.category).join("|") ===
+          "Messages|Location|Personal info|App info and performance",
+          out.j.collected.map(e => e.category).join("|"));
+  r.check("subtypes come through with the category",
+          out.j.collected[0].detail === "Emails and SMS or MMS", out.j.collected[0].detail);
+  r.check("the NPC-relevant categories are flagged",
+          out.j.sensitive.includes("Messages") && out.j.sensitive.includes("Location"),
+          JSON.stringify(out.j.sensitive));
+  // Personal info is near-universal; only the phone-number subtype is the concern.
+  r.check("Personal info counts only when it names a phone number",
+          out.j.sensitive.includes("Phone number") &&
+          !out.j.sensitive.includes("Personal info"), JSON.stringify(out.j.sensitive));
+  r.check("App info and performance is not treated as sensitive",
+          !out.j.sensitive.includes("App info and performance"), JSON.stringify(out.j.sensitive));
+  r.check("security practices are recorded",
+          out.j.encrypted === true && out.j.deletable === true,
+          `${out.j.encrypted}/${out.j.deletable}`);
+  r.check("shared and collected stay in their own sections",
+          out.s.shared.map(e => e.category).join() === "Contacts" &&
+          out.s.collected.map(e => e.category).join() === "Financial info",
+          JSON.stringify(out.s));
+  r.check("a genuinely clean declaration reports nothing collected",
+          out.c.collected.length === 0 && out.c.shared.length === 0 &&
+          out.c.sensitive.length === 0, JSON.stringify(out.c));
+  // The distinction the whole feature turns on: a page we could not read must
+  // never render as "this app collects nothing".
+  r.check("markup that is not the data-safety page yields null, not an empty result",
+          out.notAPage === null, JSON.stringify(out.notAPage));
+}
+
 await page.close();
 await browser.close();
 process.exit(r.finish() ? 1 : 0);

@@ -291,6 +291,14 @@
       "listing.privacyNone": "none listed",
       "listing.verdict": "Listing profile: {pct}% likely to resemble a declared app.",
       "listing.note": "Read from the app store just now, at your request. Declared apps typically carry far more ratings and more recent maintenance.",
+      "ds.heading": "DATA THE DEVELOPER DECLARES",
+      "ds.collected": "Collected by this app:",
+      "ds.shared": "Shared with third parties:",
+      "ds.noneCollected": "The developer declares no data collection.",
+      "ds.sensitive": "Includes {list}.",
+      "ds.encrypted": "Encrypted in transit",
+      "ds.deletable": "Deletion can be requested",
+      "ds.note": "The developer's own declaration to Google Play, shown as written. It is not a finding about this lender.",
     },
 
     tl: {
@@ -553,6 +561,14 @@
       "listing.privacyNone": "wala",
       "listing.verdict": "Profile ng listing: {pct}% ang tsansang kahawig ito ng idineklarang app.",
       "listing.note": "Binasa mula sa app store ngayon lang, sa iyong kahilingan. Ang mga idineklarang app ay karaniwang may mas maraming rating at mas bagong maintenance.",
+      "ds.heading": "DATA NA IDINEKLARA NG DEVELOPER",
+      "ds.collected": "Kinukuha ng app na ito:",
+      "ds.shared": "Ibinabahagi sa third parties:",
+      "ds.noneCollected": "Idineklara ng developer na walang data na kinukuha.",
+      "ds.sensitive": "Kabilang ang {list}.",
+      "ds.encrypted": "Naka-encrypt habang ipinapadala",
+      "ds.deletable": "Puwedeng hilingin ang pagbura",
+      "ds.note": "Ito ang sariling deklarasyon ng developer sa Google Play, ipinapakita ayon sa pagkakasulat. Hindi ito natuklasang paglabag ng lender na ito.",
     },
   };
 

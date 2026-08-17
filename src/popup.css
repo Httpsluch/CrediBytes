@@ -500,3 +500,18 @@ html.is-sidepanel, html.is-sidepanel body {
 .listing-btn:disabled { opacity: .6; cursor: default; }
 .listing-fail { font-size: 11.5px; color: var(--v-unverified); padding: 8px 0; }
 .listing { margin-top: 10px; }
+
+/* Data safety — the developer's own declaration (P3-6a).
+   Deliberately NOT styled as a verdict. It borrows the unverified amber rather
+   than the flagged red, because declaring that an app collects contacts is a
+   fact to read, not an accusation the extension is making. */
+.datasafety { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ds-flag {
+  font-size: 11.5px; font-weight: 700; color: var(--v-unverified);
+  line-height: 1.5; margin: 6px 0 2px;
+}
+.check-sub {
+  list-style: none; margin-left: -18px; margin-top: 6px;
+  font-size: 11px; font-weight: 700; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: .03em;
+}

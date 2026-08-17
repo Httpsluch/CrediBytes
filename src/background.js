@@ -232,7 +232,18 @@ async function readListing(url, advertiserName) {
       : (!!L.policy && /(blogspot|wordpress\.com|sites\.google|weebly|wixsite|github\.io|firebaseapp|000webhost|blogger)/i.test(L.policy)),
     // Rounded for display only; the model saw the exact value.
     pct: p === null ? null : Math.round(p * 100),
+    // Play only, and never allowed to break the listing. It is a SECOND page,
+    // so it can fail on its own — and a data-safety fetch that fails means we
+    // do not know what the developer declared, which is not the same as the
+    // developer declaring nothing. null keeps those apart, exactly as the
+    // privacy-policy field above does.
+    dataSafety: null,
   };
+
+  if (L.isPlay) {
+    try { out.dataSafety = await S3.fetchDataSafety(key); }
+    catch (_e) { out.dataSafety = null; }
+  }
 
   if (listingCache.size >= LISTING_CACHE_MAX) {
     listingCache.delete(listingCache.keys().next().value);

@@ -158,6 +158,106 @@ function assertReadable(L) {
   return L;
 }
 
+/* ── Data safety ──────────────────────────────────────────────────────────────
+ *
+ * Panel 3 asked whether lending apps harvest phone numbers, contacts and social
+ * media (P3-6a). Play requires every developer to declare exactly that, and
+ * publishes it as a Data safety section — so the answer is the developer's own
+ * statement to Google, not our inference. That is why this is DISPLAYED and is
+ * NOT a Stage 3 feature: it is a compliance disclosure to report, not a signal
+ * for guessing whether the SEC registered someone.
+ *
+ * It lives on a separate page from the listing, so this is a second fetch. A
+ * failure here must never take down the listing panel that already works.
+ *
+ * PARSING: the categories are a fixed vocabulary Google publishes, and the page
+ * marks up sections as <h2> and categories as <h3>. Both are anchors that mean
+ * something. The CSS classes on those tags (aFEzEb, fozKzd) are obfuscated build
+ * output and would churn without warning — the same reason the listing itself
+ * reads structured data instead of rendered text.
+ *
+ * Service workers have no DOMParser, hence regex over tags rather than a tree
+ * walk. Bounded to tag names, so it degrades to "nothing declared" rather than
+ * to something wrong.
+ */
+const DS_CATEGORIES = new Set([
+  "Location", "Personal info", "Financial info", "Health and fitness",
+  "Messages", "Photos and videos", "Audio files", "Audio", "Files and docs",
+  "Calendar", "Contacts", "App activity", "Web browsing",
+  "App info and performance", "Device or other IDs",
+]);
+
+// The categories the NPC guidance and Panel 3 actually name. Personal info is
+// handled separately — it is near-universal and only its "Phone number" subtype
+// is the concern.
+const DS_SENSITIVE = new Set([
+  "Contacts", "Messages", "Location", "Photos and videos", "Calendar",
+  "Audio files", "Audio", "Files and docs",
+]);
+
+const stripTags = (s) =>
+  String(s).replace(/<[^>]*>/g, " ").replace(/&amp;/g, "&").replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+
+function parseDataSafety(html) {
+  const collected = [], shared = [];
+  let section = null, encrypted = false, deletable = false, sawPage = false;
+
+  // h2 = section, h3 = category. Matched in document order so a category is
+  // attributed to the section it appears under.
+  const re = /<(h1|h2|h3)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const tag = m[1].toLowerCase();
+    const text = stripTags(m[2]);
+    if (!text) continue;
+
+    if (tag === "h1") { if (/^data safety$/i.test(text)) sawPage = true; continue; }
+
+    if (tag === "h2") {
+      if (/^no data (shared|collected)/i.test(text)) section = null;
+      else if (/^data shared/i.test(text)) section = shared;
+      else if (/^data collected/i.test(text)) section = collected;
+      else section = null;                       // "Security practices" and any future section
+      continue;
+    }
+
+    // h3 under Security practices states the practice itself.
+    if (/encrypted in transit/i.test(text)) { encrypted = true; continue; }
+    if (/request that data be deleted/i.test(text)) { deletable = true; continue; }
+
+    if (!section || !DS_CATEGORIES.has(text)) continue;
+    // The subtypes sit in the div immediately after the heading.
+    const after = html.slice(m.index + m[0].length, m.index + m[0].length + 1200);
+    const d = /<div\b[^>]*>([\s\S]*?)<\/div>/i.exec(after);
+    section.push({ category: text, detail: d ? stripTags(d[1]) : "" });
+  }
+
+  if (!sawPage) return null;                     // page did not render — say nothing
+
+  const flags = [];
+  for (const e of collected.concat(shared)) {
+    if (DS_SENSITIVE.has(e.category)) flags.push(e.category);
+    // "Personal info" is declared by nearly every app; only the phone number
+    // subtype is what Panel 3 asked about.
+    else if (e.category === "Personal info" && /phone number/i.test(e.detail)) {
+      flags.push("Phone number");
+    }
+  }
+  return {
+    collected, shared, encrypted, deletable,
+    sensitive: [...new Set(flags)],
+  };
+}
+
+async function fetchDataSafety(pkg) {
+  const r = await fetch(
+    `https://play.google.com/store/apps/datasafety?id=${encodeURIComponent(pkg)}&hl=en&gl=PH`);
+  if (!r.ok) throw new Error(`datasafety ${r.status}`);
+  return parseDataSafety(await r.text());
+}
+
 async function fetchApple(appId) {
   const r = await fetch(
     `https://itunes.apple.com/lookup?id=${encodeURIComponent(appId)}&country=ph`);
@@ -269,5 +369,5 @@ function score3(named) {
 
 globalThis.CrediBytesStage3 = {
   fetchPlay, fetchApple, buildFeatures3, score3, parsePlayDatasets, devMatches,
-  findAppDataset, assertReadable,
+  findAppDataset, assertReadable, fetchDataSafety, parseDataSafety,
 };

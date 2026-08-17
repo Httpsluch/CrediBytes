@@ -272,6 +272,52 @@ function buildListing(L) {
     box.appendChild(el("div", "detail-body", T("listing.verdict", { pct: L.pct })));
   }
   box.appendChild(el("div", "contrib-note", T("listing.note")));
+  // Only when the developer actually declared something. null means the
+  // declaration could not be read, and an empty section would read as "this app
+  // collects nothing" — the opposite of the truth.
+  if (L.dataSafety) box.appendChild(buildDataSafety(L.dataSafety));
+  return box;
+}
+
+/**
+ * The developer's own Data safety declaration, quoted rather than judged.
+ *
+ * Every line here is a statement the developer made to Google. The extension
+ * adds no inference: it does not say collecting contacts is illegitimate, only
+ * that the developer declared it. Whether that breaches NPC guidance is the
+ * regulator's call, and the wording keeps it that way — the same discipline the
+ * revoked-list advisory uses (section 2.15).
+ */
+function buildDataSafety(DS) {
+  const box = el("div", "datasafety");
+  box.appendChild(el("p", "detail-h", T("ds.heading")));
+
+  if (DS.sensitive && DS.sensitive.length) {
+    box.appendChild(el("div", "ds-flag",
+      T("ds.sensitive", { list: DS.sensitive.join(", ") })));
+  }
+
+  const ul = el("ul", "check-list");
+  const line = (e) => el("li", "check-item",
+    e.detail ? `${e.category} — ${e.detail}` : e.category);
+  if (DS.collected.length) {
+    ul.appendChild(el("li", "check-sub", T("ds.collected")));
+    for (const e of DS.collected) ul.appendChild(line(e));
+  } else {
+    ul.appendChild(el("li", "check-item", T("ds.noneCollected")));
+  }
+  if (DS.shared.length) {
+    ul.appendChild(el("li", "check-sub", T("ds.shared")));
+    for (const e of DS.shared) ul.appendChild(line(e));
+  }
+  box.appendChild(ul);
+
+  const sec = [];
+  if (DS.encrypted) sec.push(T("ds.encrypted"));
+  if (DS.deletable) sec.push(T("ds.deletable"));
+  if (sec.length) box.appendChild(el("div", "detail-body", sec.join(" · ")));
+
+  box.appendChild(el("div", "contrib-note", T("ds.note")));
   return box;
 }
 
