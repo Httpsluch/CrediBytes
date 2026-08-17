@@ -54,6 +54,7 @@
   },
   "optional_host_permissions": [
     "https://play.google.com/*",
-    "https://itunes.apple.com/*"
+    "https://itunes.apple.com/*",
+    "https://apps.apple.com/*"
   ]
 }

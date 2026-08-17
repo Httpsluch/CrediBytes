@@ -276,18 +276,52 @@ async function fetchApple(appId) {
     reviews: typeof a.userRatingCount === "number" ? a.userRatingCount : undefined,
     updatedMs: a.currentVersionReleaseDate
       ? Date.parse(a.currentVersionReleaseDate) : undefined,
-    // UNKNOWN, not absent. The iTunes lookup API has no privacyPolicyUrl key at
-    // all — confirmed against the live API — so we simply did not look.
+    // The iTunes lookup API has no privacyPolicyUrl key at all — confirmed
+    // against the live API. So it is read from the store PAGE instead, which is
+    // what enrich_model_features.py does and where training's values for all 38
+    // Apple rows (26 with a policy, 12 without) came from.
     //
-    // This previously sent "" and became has_privacy_policy = 0, which told the
-    // model every Apple app lacks a policy. It also displayed "Privacy policy:
-    // none listed" for apps that plainly have one. Training carried real values
-    // for all 38 Apple rows (26 with, 12 without) because the enrichment
-    // scraped the store PAGE, so a fabricated 0 was a train/serve skew as well
-    // as a false statement on screen.
-    policy: undefined,
+    // undefined when the page cannot be read: UNKNOWN, not absent. Sending ""
+    // here is what previously told the model every Apple app lacks a policy and
+    // printed "Privacy policy: none listed" for apps that plainly have one.
+    policy: await applePolicy(appId),
     contentRating: a.contentAdvisoryRating || "",
   };
+}
+
+// Apple and Google each render their OWN privacy links on every app page, ahead
+// of the developer's, so "first href mentioning privacy" returns Apple's policy
+// for every app on the store. Same list and same ranking as
+// extract_privacy_policy() in enrich_model_features.py.
+const PLATFORM_PP_HOSTS =
+  /(^|\.)(apple\.com|cdn-apple\.com|google\.com|gstatic\.com|googleusercontent\.com|googleapis\.com)$/i;
+
+function extractPrivacyPolicy(html) {
+  const re = /<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  let m, exact = "", loose = "";
+  while ((m = re.exec(html)) !== null) {
+    const text = stripTags(m[2]).toLowerCase();
+    if (!text.includes("privacy")) continue;
+    const href = m[1].replace(/&amp;/g, "&").trim();
+    if (!/^https?:\/\//i.test(href)) continue;
+    let host = "";
+    try { host = new URL(href).hostname; } catch (_e) { continue; }
+    if (PLATFORM_PP_HOSTS.test(host)) continue;
+    if (text.includes("privacy policy")) { if (!exact) exact = href; }
+    else if (!loose) loose = href;
+  }
+  return exact || loose;
+}
+
+async function applePolicy(appId) {
+  try {
+    const r = await fetch(
+      `https://apps.apple.com/ph/app/id${encodeURIComponent(appId)}`);
+    if (!r.ok) return undefined;              // could not look
+    return extractPrivacyPolicy(await r.text());   // "" means looked, found none
+  } catch (_e) {
+    return undefined;
+  }
 }
 
 /** Same containment formula as tokenOverlap() in matcher.js. */
@@ -370,4 +404,5 @@ function score3(named) {
 globalThis.CrediBytesStage3 = {
   fetchPlay, fetchApple, buildFeatures3, score3, parsePlayDatasets, devMatches,
   findAppDataset, assertReadable, fetchDataSafety, parseDataSafety,
+  extractPrivacyPolicy,
 };

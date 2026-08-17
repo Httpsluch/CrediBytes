@@ -234,7 +234,10 @@ function buildDetail(scan) {
       // until a user asks it to read a specific listing, and Chrome shows the
       // prompt at the moment the reason for it is on screen. Declining leaves
       // everything else working.
-      const origins = ["https://play.google.com/*", "https://itunes.apple.com/*"];
+      // apps.apple.com is separate from itunes.apple.com: the lookup API lives on
+      // one host and the store page carrying the privacy policy on the other.
+      const origins = ["https://play.google.com/*", "https://itunes.apple.com/*",
+                       "https://apps.apple.com/*"];
       if (chrome.permissions && chrome.permissions.request) {
         chrome.permissions.request({ origins }, (granted) => {
           if (granted) return go();

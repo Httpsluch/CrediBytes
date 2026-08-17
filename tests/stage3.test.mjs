@@ -486,6 +486,44 @@ return globalThis;`);
           out.notAPage === null, JSON.stringify(out.notAPage));
 }
 
+// ── Apple's privacy policy comes from the page, not the API ────────────────
+//
+// The iTunes lookup API exposes no privacy field, so this is scraped — the same
+// route enrich_model_features.py took, and where training's real 0/1 for all 38
+// Apple rows came from. Serving `undefined` was honest but not what the model
+// was trained on; this closes that gap.
+{
+  const out = await page.evaluate(() => {
+    const S = window.CrediBytesStage3;
+    // Apple renders its OWN privacy links first on every app page. A naive
+    // "first href mentioning privacy" returns apple.com for every app.
+    const real = `
+      <a href="https://www.apple.com/legal/privacy/">Privacy Policy</a>
+      <a href="https://support.apple.com/privacy">Privacy</a>
+      <a href="https://cashmart.ph/privacy-policy/">App Privacy Policy</a>`;
+    const looseOnly = `<a href="https://lender.example/p">Privacy</a>`;
+    const exactWins = `
+      <a href="https://lender.example/loose">Privacy notice</a>
+      <a href="https://lender.example/exact">Privacy Policy</a>`;
+    return {
+      real: S.extractPrivacyPolicy(real),
+      none: S.extractPrivacyPolicy(`<a href="https://apple.com/legal/privacy/">Privacy Policy</a>`),
+      loose: S.extractPrivacyPolicy(looseOnly),
+      exact: S.extractPrivacyPolicy(exactWins),
+      relative: S.extractPrivacyPolicy(`<a href="/privacy">Privacy Policy</a>`),
+    };
+  });
+
+  r.check("the developer's policy is found past Apple's own links",
+          out.real === "https://cashmart.ph/privacy-policy/", out.real);
+  r.check("a page with only platform links yields none", out.none === "", out.real);
+  r.check("a loose 'Privacy' anchor still counts",
+          out.loose === "https://lender.example/p", out.loose);
+  r.check("an exact 'Privacy Policy' outranks a loose match",
+          out.exact === "https://lender.example/exact", out.exact);
+  r.check("relative hrefs are ignored", out.relative === "", out.relative);
+}
+
 await page.close();
 await browser.close();
 process.exit(r.finish() ? 1 : 0);
