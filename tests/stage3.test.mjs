@@ -306,8 +306,17 @@ return globalThis;`);
           !!L && L.listing === undefined, JSON.stringify(L).slice(0, 90));
   r.check("developer reaches the popup", !!L && L.developer === "MAKATI LOAN, INC",
           String(L && L.developer));
-  r.check("ratings reach the popup", !!L && /9,?000 ratings/.test(L.ratings || ""),
+  // Installs, rating count and star rating are three separate fields; the unit
+  // word lives in the i18n template, not in the value. Combining them hid Play's
+  // rating count behind its install count, so the row read "3,199,675 installs"
+  // under a heading saying "Ratings".
+  r.check("the rating count reaches the popup", !!L && /^9,?000$/.test(L.ratings || ""),
           String(L && L.ratings));
+  // This fixture is an Apple listing, and Apple publishes no install count.
+  r.check("Apple reports no installs rather than zero", !!L && L.installs === "",
+          JSON.stringify(L && L.installs));
+  r.check("the star rating is rounded to one decimal",
+          !!L && /^\d\.\d$/.test(L.stars || ""), String(L && L.stars));
   r.check("last-updated reaches the popup", !!L && /^\d{4}-\d{2}-\d{2}$/.test(L.updated || ""),
           String(L && L.updated));
   r.check("a score reaches the popup", !!L && typeof L.pct === "number",

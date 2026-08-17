@@ -243,16 +243,40 @@
     return common / Math.min(setA.size, setB.size);
   }
 
+  // The advertiser name and the claimed app name are INDEPENDENT pieces of
+  // evidence, so they are scored separately and the best is taken. Concatenating
+  // them first meant one could bury the other.
+  //
+  // Measured on a live Cashalo advertisement. Facebook renders a link-preview
+  // headline ("Convenient application") which getAppName() picks up, so the
+  // query became "Convenient application Cashalo" -> {convenient, application,
+  // cashalo}. Against Cashalo's own registry entry {cashalo, paloo} that is
+  // 1/min(3,2) = 0.50, under the 0.60 threshold — and the suggestion vanished
+  // even though the advertiser name alone scores 1.00.
+  //
+  // That is the Kviku problem again (see tokenOverlap above), arriving through
+  // the query instead of the reference: a distinctive brand matched exactly and
+  // was discarded because something wordier was bolted onto it. Containment
+  // fixed the reference side; scoring the fields apart fixes the query side.
+  //
+  // Recall is the right thing to buy here. This function only ever produces a
+  // SUGGESTION, rendered under a "Possible match" heading — Pass 3 still refuses
+  // to verify on a name, so nothing about the verdict is loosened.
   function findClosestSecEntry(claimedAppName, claimedCompany) {
-    const queryTokens = tokenize((claimedAppName + " " + claimedCompany).trim());
-    if (queryTokens.length === 0) return null;
+    const queries = [
+      tokenize(String(claimedAppName || "").trim()),
+      tokenize(String(claimedCompany || "").trim()),
+      tokenize((claimedAppName + " " + claimedCompany).trim()),
+    ].filter(q => q.length);
+    if (!queries.length) return null;
 
     let bestRef   = null;
     let bestScore = 0;
 
     for (const ref of SEC_REFERENCE) {
       const refTokens = tokenize((ref.appName + " " + ref.company).trim());
-      const score = tokenOverlap(queryTokens, refTokens);
+      let score = 0;
+      for (const q of queries) score = Math.max(score, tokenOverlap(q, refTokens));
       if (score > bestScore) {
         bestScore = score;
         bestRef   = ref;

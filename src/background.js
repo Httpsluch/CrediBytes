@@ -217,12 +217,18 @@ async function readListing(url, advertiserName) {
   // string while everything else was missing.
   const out = {
     developer: L.developer,
-    // Installs where the store publishes them, ratings otherwise. Apple gives
-    // no install count at all, so showing "0 installs" there would be a
-    // fabrication rather than a measurement.
-    ratings: L.installs !== undefined
-      ? `${L.installs.toLocaleString()} installs`
-      : (L.reviews !== undefined ? `${L.reviews.toLocaleString()} ratings` : ""),
+    // Play publishes installs AND a rating count; Apple publishes only the
+    // rating count, because Apple does not disclose installs at all. Showing
+    // one OR the other used to hide Play's rating count behind its install
+    // count, so the row said "installs" under a heading reading "Ratings".
+    //
+    // Each field is sent separately and the card omits whichever is absent —
+    // an unavailable install count is not a zero (section 3.15).
+    installs: L.installs !== undefined ? L.installs.toLocaleString() : "",
+    ratings: L.reviews !== undefined ? L.reviews.toLocaleString() : "",
+    // Rounded to one decimal: the raw value carries full float precision
+    // (4.6711235), which reads as false precision on a store rating.
+    stars: typeof L.rating === "number" ? L.rating.toFixed(1) : "",
     updated: L.updatedMs !== undefined
       ? new Date(L.updatedMs).toISOString().slice(0, 10) : "",
     // null = we did not look (Apple's lookup API exposes no policy field).

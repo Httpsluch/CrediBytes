@@ -62,6 +62,49 @@ for (const [label, html, expectName] of [
   await page.close();
 }
 
+// A generic link-preview headline must not bury the advertiser's brand.
+//
+// Live Cashalo ad: Facebook renders "Convenient application" as the preview
+// headline, getAppName() picks it up, and the query became
+// "Convenient application Cashalo" -> {convenient, application, cashalo}.
+// Against Cashalo's registry entry {cashalo, paloo} that scores 1/min(3,2) =
+// 0.50, under the 0.60 threshold, so the Possible Match section disappeared —
+// while the advertiser name ALONE scores 1.00. The two fields are independent
+// evidence and are now scored apart.
+{
+  const page = await browser.newPage();
+  await page.goto("about:blank");
+  await page.addScriptTag({ content: await read("i18n.js") });
+  await page.addScriptTag({ content: await read("verdict-view.js") });
+  await page.addScriptTag({ content: await read("sec_reference.js") });
+  await page.addScriptTag({ content: await read("revoked_reference.js") });
+  await page.addScriptTag({ content: await read("matcher.js") });
+  const out = await page.evaluate(() => {
+    const M = window.CrediBytesMatcher;
+    const s = (app, co) => {
+      const r = M.matchUrl("https://app.cashaloapp.com/", app, co);
+      return { sugg: r.suggestion ? r.suggestion.company : null, leg: r.legitimacy };
+    };
+    return {
+      diluted: s("Convenient application", "Cashalo"),
+      bare: s("", "Cashalo"),
+      junk: s("Convenient application", "Totally Unrelated Brand"),
+    };
+  });
+  check("cashalo: a generic preview headline no longer buries the brand",
+        /paloo/i.test(out.diluted.sugg || ""), JSON.stringify(out.diluted));
+  check("cashalo: the advertiser name alone still resolves",
+        /paloo/i.test(out.bare.sugg || ""), JSON.stringify(out.bare));
+  // Raising suggestion recall must not raise the VERDICT. A suggestion is
+  // rendered under "Possible match"; Pass 3 still refuses to verify on a name.
+  check("cashalo: the verdict stays unverified regardless",
+        out.diluted.leg === "unverified" && out.bare.leg === "unverified",
+        `${out.diluted.leg}/${out.bare.leg}`);
+  check("an unrelated advertiser still gets no suggestion",
+        out.junk.sugg === null, JSON.stringify(out.junk));
+  await page.close();
+}
+
 // Noise rejection: a bare <strong>Like</strong> must not become the name.
 {
   const page = await browser.newPage();

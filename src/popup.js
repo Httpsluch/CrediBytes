@@ -262,7 +262,11 @@ function buildListing(L) {
   const ul = el("ul", "check-list");
   const add = (key, value) => { if (value != null && value !== "") ul.appendChild(el("li", "check-item", T(key, { value }))); };
   add("listing.developer", L.developer);
+  // Three separate rows. Apple publishes no install count, so that row simply
+  // does not appear there rather than reading zero.
+  add("listing.installs", L.installs);
   add("listing.ratings", L.ratings);
+  add("listing.stars", L.stars);
   add("listing.updated", L.updated);
   // Omitted entirely when unknown. Printing "none listed" for a store whose API
   // does not expose the field states something false about the app.
