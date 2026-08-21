@@ -797,7 +797,10 @@ document.getElementById("report-bug-btn")?.addEventListener("click", () => {
       scans: String((data.scans || []).length),
     };
     if (BUG_FORM.url.includes("FORM_ID_HERE")) {
-      flashStatus("lang-status", "No bug form is configured yet.");
+      // Its own status line. This pointed at lang-status, an id that does not
+      // exist, so the one case that needs feedback — no form configured yet —
+      // failed silently and the button looked broken.
+      flashStatus("bug-status", T("ui.reportBugUnset"));
       return;
     }
     chrome.tabs.create({ url: bugReportUrl(info) });

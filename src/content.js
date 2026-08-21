@@ -1251,7 +1251,10 @@
          its own palette because it lives in Facebook's page and inherits
          nothing. Same three-state theming as the badge: forced light, forced
          dark, or follow the OS. */
-      #cb-floating {
+      /* Both windows share one palette. Scoping it to #cb-floating alone is
+         what made the detail window transparent: every var(--f-*) resolved to
+         nothing, so it painted straight onto Facebook with no background. */
+      #cb-floating, #cb-float-detail {
         --f-bg: #ffffff; --f-fg: #12141c; --f-border: #e2e5ec;
         --f-row: #f7f8fa; --f-sub: #5c6270; --f-mute: #969ba8;
         --f-chip-bg: #76b729; --f-chip-fg: #ffffff;
@@ -1259,7 +1262,7 @@
         --f-shadow: rgba(0,0,0,.22);
       }
       @media (prefers-color-scheme: dark) {
-        #cb-floating:not(.cb-light) {
+        #cb-floating:not(.cb-light), #cb-float-detail:not(.cb-light) {
           --f-bg: #161922; --f-fg: #e9ebf2; --f-border: #272c39;
           --f-row: #1b1f2a; --f-sub: #9aa0b4; --f-mute: #6b7183;
           --f-chip-bg: #8ccf35; --f-chip-fg: #10160a;
@@ -1267,7 +1270,7 @@
           --f-shadow: rgba(0,0,0,.55);
         }
       }
-      #cb-floating.cb-dark {
+      #cb-floating.cb-dark, #cb-float-detail.cb-dark {
         --f-bg: #161922; --f-fg: #e9ebf2; --f-border: #272c39;
         --f-row: #1b1f2a; --f-sub: #9aa0b4; --f-mute: #6b7183;
         --f-chip-bg: #8ccf35; --f-chip-fg: #10160a;

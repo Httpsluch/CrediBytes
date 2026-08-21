@@ -12,6 +12,11 @@
 
 const BACKEND_URL = 'https://credibytes-backend.onrender.com'
 
+// Must carry ?panel=1 — panel-init.js keys the side-panel layout off it, and a
+// setOptions() call without it overrides the manifest default_path and loads
+// the panel with popup sizing. Mirrors the constant in popup.js.
+const PANEL_PATH = "src/popup.html?panel=1";
+
 const DEFAULT_SETTINGS = {
   scanningEnabled: true,
   // Two independent settings, not one three-way value. See the migration in
@@ -66,14 +71,52 @@ async function applyActionBehaviour(settings) {
   const useSidePanel = typeof s.sidePanel === "boolean"
     ? s.sidePanel
     : s.displayMode === "sidepanel";
+  // ORDER MATTERS, and getting it wrong produced a toolbar button that did
+  // nothing at all.
+  //
+  // Clearing the popup is what lets a click reach the side panel, but between
+  // clearing it and enabling the panel behaviour there is a window in which
+  // neither is configured — and a click in that window opens nothing. Worse,
+  // the old code cleared the popup FIRST and then caught a setPanelBehavior
+  // failure with a comment saying the popup remained as a fallback. It did not:
+  // it had already been removed, so a failure left the button permanently dead.
+  //
+  // So: turning the panel ON, enable the behaviour before removing the popup.
+  // Turning it OFF, restore the popup before disabling the behaviour. Whichever
+  // way it goes, at every instant at least one of the two is live.
   try {
-    // Empty string disables the popup so the click reaches the side panel.
-    await chrome.action.setPopup({ popup: useSidePanel ? "" : "src/popup.html" });
-    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: useSidePanel });
+    if (useSidePanel) {
+      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+      await chrome.action.setPopup({ popup: "" });
+    } else {
+      await chrome.action.setPopup({ popup: "src/popup.html" });
+      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
+    }
   } catch (_e) {
-    // Older Chrome without setPanelBehavior — keep the popup as the fallback.
+    // Older Chrome without setPanelBehavior, or the call failed. NOW the popup
+    // is genuinely the fallback, because this restores it rather than assuming
+    // it survived.
+    try { await chrome.action.setPopup({ popup: "src/popup.html" }); } catch (_e2) {}
   }
 }
+
+// Safety net. With the popup cleared, a click normally opens the panel without
+// firing this at all — it fires only when the panel behaviour is NOT in effect,
+// which is exactly the state that used to swallow the click silently.
+//
+// Re-enabling first matters: turning the toggle off calls setOptions({enabled:
+// false}) for that tab, and open() on a disabled panel throws.
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab?.id) return;
+  try {
+    await chrome.sidePanel.setOptions({ tabId: tab.id, path: PANEL_PATH, enabled: true });
+    await chrome.sidePanel.open({ tabId: tab.id });
+  } catch (_e) {
+    // Nothing further to try: if the panel will not open, restoring the popup
+    // at least makes the next click work.
+    try { await chrome.action.setPopup({ popup: "src/popup.html" }); } catch (_e2) {}
+  }
+});
 
 async function syncActionBehaviour() {
   const data = await chrome.storage.local.get("settings");

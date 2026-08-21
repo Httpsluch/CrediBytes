@@ -252,7 +252,7 @@ return globalThis;`);
   const out = await page.evaluate(async ([bgSrc, modelSrc, libSrc]) => {
     // Run background.js in a worker-shaped scope and capture what the
     // CHECK_LISTING handler passes to sendResponse.
-    let handler = null;
+    let handler = null, clicked = null;
     const g = {
       Map, Set, JSON, Date, Math, Promise, console, URL, RegExp,
       encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout, isNaN,
@@ -266,8 +266,14 @@ return globalThis;`);
                    onMessage: { addListener(fn) { handler = fn; } }, lastError: null },
         storage: { local: { get: async () => ({}), set: async () => {} },
                    onChanged: { addListener() {} } },
-        action: { setPopup: async () => {} },
-        sidePanel: { setPanelBehavior: async () => {} },
+        // The shim mirrors what MV3 actually exposes. Adding a listener the
+        // shim lacks used to crash the whole worker load, which reads as a
+        // Stage 3 failure while the real defect is elsewhere — so the shim is
+        // extended rather than the code being guarded for a platform API that
+        // is always present.
+        action: { setPopup: async () => {}, onClicked: { addListener(fn) { clicked = fn; } } },
+        sidePanel: { setPanelBehavior: async () => {}, setOptions: async () => {},
+                     open: async () => {} },
         tabs: { onUpdated: { addListener() {} }, onActivated: { addListener() {} } },
       },
     };
@@ -291,14 +297,19 @@ return globalThis;`);
                  bgSrc).call(g, g, g, g.chrome, g.importScripts, g.fetch, console);
 
     if (!handler) return { err: "no message handler registered" };
+    // A toolbar click with the popup cleared and the panel behaviour not in
+    // effect used to open nothing at all, because no onClicked listener existed.
+    const hasClickFallback = typeof clicked === "function";
     const res = await new Promise(resolve => {
       handler({ type: "CHECK_LISTING", url: "https://apps.apple.com/ph/app/x/id123",
                 advertiserName: "Makati Loan Inc" }, {}, resolve);
     });
-    return { res };
+    return { res, hasClickFallback };
   }, [await read("background.js"), await read("stage3_model.js"), await read("stage3.js")]);
 
   const L = out.res && out.res.listing;
+  r.check("a toolbar-click fallback is registered",
+          out.hasClickFallback === true, String(out.hasClickFallback));
   r.check("the handler responds ok", out.res && out.res.ok === true,
           JSON.stringify(out.err || out.res).slice(0, 90));
   // The assertion that was missing.
