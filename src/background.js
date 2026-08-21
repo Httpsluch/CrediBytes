@@ -247,8 +247,13 @@ async function readListing(url, advertiserName) {
   };
 
   if (L.isPlay) {
+    // Play publishes this on a separate page, so it is a second fetch and is
+    // caught on its own. Apple publishes it in the listing page fetchApple()
+    // already read, so it arrives on L with no extra request.
     try { out.dataSafety = await S3.fetchDataSafety(key); }
     catch (_e) { out.dataSafety = null; }
+  } else {
+    out.dataSafety = L.dataSafety || null;
   }
 
   if (listingCache.size >= LISTING_CACHE_MAX) {

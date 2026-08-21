@@ -317,6 +317,13 @@ function buildDataSafety(DS) {
     ul.appendChild(el("li", "check-sub", T("ds.shared")));
     for (const e of DS.shared) ul.appendChild(line(e));
   }
+  // Apple only. "Used to track you across apps owned by other companies" is a
+  // stronger statement than "collected" and has no Play equivalent, so it is
+  // reported separately rather than folded into the list above.
+  if (DS.tracking && DS.tracking.length) {
+    ul.appendChild(el("li", "check-sub", T("ds.tracking")));
+    for (const e of DS.tracking) ul.appendChild(line(e));
+  }
   box.appendChild(ul);
 
   const sec = [];

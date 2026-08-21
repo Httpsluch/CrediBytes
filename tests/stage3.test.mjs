@@ -533,6 +533,66 @@ return globalThis;`);
   r.check("relative hrefs are ignored", out.relative === "", out.relative);
 }
 
+// ── Apple publishes the same declaration, in a different shape ─────────────
+//
+// P3-6a is answerable on both stores. Apple embeds App Privacy labels as JSON
+// in the listing page fetchApple() already reads, so it costs no extra request.
+{
+  const out = await page.evaluate(() => {
+    const S = window.CrediBytesStage3;
+    const wrap = (obj) =>
+      `<html><script type="application/json" id="serialized-server-data">${JSON.stringify(obj)}</script></html>`;
+    const cat = (title, types) =>
+      ({ $kind: "PrivacyCategory", title, dataTypes: types });
+    const collected = wrap([{ d: { types: [
+      { $kind: "PrivacyType", identifier: "DATA_USED_TO_TRACK_YOU",
+        c: [cat("Identifiers", ["Device ID"])] },
+      { $kind: "PrivacyType", identifier: "DATA_LINKED_TO_YOU",
+        c: [cat("Contact Info", ["Email Address", "Phone Number"]),
+            cat("Location", ["Coarse Location"])] },
+      // The page repeats each block; a duplicate identifier must not double up.
+      { $kind: "PrivacyType", identifier: "DATA_LINKED_TO_YOU",
+        c: [cat("Contact Info", ["Email Address", "Phone Number"])] },
+    ] } }]);
+    const none = wrap([{ types: [
+      { $kind: "PrivacyType", identifier: "DATA_NOT_COLLECTED", c: [] }] }]);
+    return {
+      c: S.parseAppleDataSafety(collected),
+      none: S.parseAppleDataSafety(none),
+      noBlock: S.parseAppleDataSafety("<html><body>nothing here</body></html>"),
+      badJson: S.parseAppleDataSafety(
+        '<script type="application/json" id="serialized-server-data">{oops</script>'),
+    };
+  });
+
+  r.check("Apple's linked-data categories are read",
+          out.c.collected.map(e => e.category).join("|") === "Contact Info|Location",
+          JSON.stringify(out.c.collected));
+  r.check("a repeated PrivacyType block is not counted twice",
+          out.c.collected.length === 2, String(out.c.collected.length));
+  // Contact Info is near-universal; only the phone-number subtype is the concern,
+  // matching how Personal info is handled on Play.
+  r.check("Contact Info counts only when it names a phone number",
+          out.c.sensitive.includes("Phone number") &&
+          !out.c.sensitive.includes("Contact Info"), JSON.stringify(out.c.sensitive));
+  // Apple's tracking bucket has no Play equivalent and is a stronger statement
+  // than "collected", so it is kept separate rather than merged.
+  r.check("tracking is reported on its own",
+          out.c.tracking.length === 1 && out.c.collected.every(e => e.category !== "Identifiers"),
+          JSON.stringify(out.c.tracking));
+  // Apple publishes no encryption/deletion equivalent: not looked at, not absent.
+  r.check("practices Apple does not publish are undefined, not false",
+          out.c.encrypted === undefined && out.c.deletable === undefined,
+          `${out.c.encrypted}/${out.c.deletable}`);
+  r.check("DATA_NOT_COLLECTED is an empty declaration, not a failure",
+          out.none !== null && out.none.collected.length === 0,
+          JSON.stringify(out.none));
+  r.check("a page without the block yields null, not an empty declaration",
+          out.noBlock === null, JSON.stringify(out.noBlock));
+  r.check("unparseable JSON yields null rather than throwing",
+          out.badJson === null, JSON.stringify(out.badJson));
+}
+
 await page.close();
 await browser.close();
 process.exit(r.finish() ? 1 : 0);

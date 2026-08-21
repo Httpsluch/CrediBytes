@@ -258,6 +258,79 @@ async function fetchDataSafety(pkg) {
   return parseDataSafety(await r.text());
 }
 
+/* ── Apple's App Privacy labels ────────────────────────────────────────────────
+ *
+ * Apple requires the same kind of declaration Google does, and publishes it on
+ * the store page as embedded JSON rather than as a separate page. So P3-6a is
+ * answerable on BOTH stores, not just Play.
+ *
+ * The structures do not line up exactly and are not forced to:
+ *
+ *   Play    "Data shared" / "Data collected", 14 categories
+ *   Apple   DATA_USED_TO_TRACK_YOU / DATA_LINKED_TO_YOU / DATA_NOT_LINKED_TO_YOU
+ *
+ * Apple's tracking bucket has no Play equivalent and is reported on its own —
+ * "used to track you across apps owned by other companies" is a stronger
+ * statement than "collected", and flattening it into the collected list would
+ * lose the part a reader most needs.
+ *
+ * DATA_NOT_COLLECTED is Apple stating the developer declared nothing. That is a
+ * real observation and must stay distinct from a page we could not read, which
+ * returns null — the same rule as everywhere else (section 3.15).
+ */
+const APPLE_SENSITIVE = /^(Contacts|Location|Sensitive Info|User Content|Browsing History|Search History)$/i;
+const APPLE_PHONE = /phone number/i;
+
+function parseAppleDataSafety(html) {
+  const m = /<script[^>]*id="serialized-server-data"[^>]*>([\s\S]*?)<\/script>/i.exec(html);
+  if (!m) return null;
+  let data;
+  try { data = JSON.parse(m[1]); } catch (_e) { return null; }
+
+  const types = [];
+  (function walk(o) {
+    if (!o || typeof o !== "object") return;
+    if (Array.isArray(o)) { for (const v of o) walk(v); return; }
+    if (o.$kind === "PrivacyType") types.push(o);
+    for (const v of Object.values(o)) walk(v);
+  })(data);
+  if (!types.length) return null;
+
+  const collected = [], tracking = [];
+  const seen = new Set();
+  for (const pt of types) {
+    if (seen.has(pt.identifier)) continue;      // the page repeats each block
+    seen.add(pt.identifier);
+    const cats = [];
+    (function wc(o) {
+      if (!o || typeof o !== "object") return;
+      if (Array.isArray(o)) { for (const v of o) wc(v); return; }
+      if (o.$kind === "PrivacyCategory") {
+        cats.push({ category: String(o.title || ""),
+                    detail: (o.dataTypes || []).join(", ") });
+      }
+      for (const v of Object.values(o)) wc(v);
+    })(pt);
+    if (pt.identifier === "DATA_USED_TO_TRACK_YOU") tracking.push(...cats);
+    else if (pt.identifier !== "DATA_NOT_COLLECTED") collected.push(...cats);
+  }
+
+  const flags = [];
+  for (const e of collected.concat(tracking)) {
+    if (APPLE_SENSITIVE.test(e.category)) flags.push(e.category);
+    else if (/^contact info$/i.test(e.category) && APPLE_PHONE.test(e.detail)) {
+      flags.push("Phone number");
+    }
+  }
+  return {
+    collected, shared: [], tracking,
+    // Apple publishes no equivalent of Play's encryption/deletion practices.
+    // undefined, not false: we did not look, rather than looked and found none.
+    encrypted: undefined, deletable: undefined,
+    sensitive: [...new Set(flags)],
+  };
+}
+
 async function fetchApple(appId) {
   const r = await fetch(
     `https://itunes.apple.com/lookup?id=${encodeURIComponent(appId)}&country=ph`);
@@ -265,6 +338,7 @@ async function fetchApple(appId) {
   const j = await r.json();
   const a = j.results && j.results[0];
   if (!a) throw new Error("not in the PH storefront");
+  const extras = await applePage(appId);
   return {
     isPlay: 0,
     title: a.trackName || "",
@@ -284,7 +358,8 @@ async function fetchApple(appId) {
     // undefined when the page cannot be read: UNKNOWN, not absent. Sending ""
     // here is what previously told the model every Apple app lacks a policy and
     // printed "Privacy policy: none listed" for apps that plainly have one.
-    policy: await applePolicy(appId),
+    policy: extras ? extras.policy : undefined,
+    dataSafety: extras ? extras.dataSafety : null,
     contentRating: a.contentAdvisoryRating || "",
   };
 }
@@ -313,14 +388,19 @@ function extractPrivacyPolicy(html) {
   return exact || loose;
 }
 
-async function applePolicy(appId) {
+// One fetch, two extractions. The policy and the privacy labels live on the
+// same page, and fetching it twice would double the button's network cost for
+// no reason.
+async function applePage(appId) {
   try {
     const r = await fetch(
       `https://apps.apple.com/ph/app/id${encodeURIComponent(appId)}`);
-    if (!r.ok) return undefined;              // could not look
-    return extractPrivacyPolicy(await r.text());   // "" means looked, found none
+    if (!r.ok) return null;                        // could not look
+    const html = await r.text();
+    return { policy: extractPrivacyPolicy(html),   // "" means looked, found none
+             dataSafety: parseAppleDataSafety(html) };
   } catch (_e) {
-    return undefined;
+    return null;
   }
 }
 
@@ -404,5 +484,5 @@ function score3(named) {
 globalThis.CrediBytesStage3 = {
   fetchPlay, fetchApple, buildFeatures3, score3, parsePlayDatasets, devMatches,
   findAppDataset, assertReadable, fetchDataSafety, parseDataSafety,
-  extractPrivacyPolicy,
+  extractPrivacyPolicy, parseAppleDataSafety,
 };
