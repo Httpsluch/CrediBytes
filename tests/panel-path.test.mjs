@@ -124,9 +124,27 @@ for (const [w, h, param, expectPanel] of [
           /let activeTabId/.test(popupJs) && /chrome\.sidePanel\.open\(\{\s*tabId:\s*activeTabId/.test(popupJs),
           "activeTabId not used for open()");
 
-  // A refusal must not take the popup-close with it.
-  r.check("open() is wrapped so a refusal cannot skip what follows",
-          /try\s*\{\s*chrome\.sidePanel\.open\(/.test(popupJs), "not wrapped");
+  // A refusal must not take anything else down with it. The call now sits in a
+  // try block alongside setOptions rather than in one of its own, so match the
+  // block rather than the exact adjacency.
+  const openIdx = popupJs.indexOf("chrome.sidePanel.open(");
+  const tryIdx = popupJs.lastIndexOf("try {", openIdx);
+  const catchIdx = popupJs.indexOf("catch", openIdx);
+  r.check("open() runs inside a try/catch",
+          tryIdx !== -1 && catchIdx !== -1 && tryIdx < openIdx && catchIdx > openIdx,
+          `try@${tryIdx} open@${openIdx} catch@${catchIdx}`);
+
+  // The write must land before anything destroys the page doing it. Turning the
+  // toggle off from inside the panel used to close the panel first, so the
+  // setting never persisted and read back ON next time.
+  const setIdx = popupJs.indexOf("chrome.storage.local.set({ settings: s }, () => {",
+                                 popupJs.indexOf("sidepanel-toggle"));
+  const disableIdx = popupJs.indexOf("enabled: false", setIdx);
+  const closeIdx = popupJs.indexOf("window.close()", setIdx);
+  r.check("the panel is disabled only after the setting is written",
+          setIdx !== -1 && disableIdx > setIdx, `set@${setIdx} disable@${disableIdx}`);
+  r.check("the popup closes only after the setting is written",
+          closeIdx > setIdx, `set@${setIdx} close@${closeIdx}`);
 }
 
 await browser.close();

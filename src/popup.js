@@ -718,31 +718,50 @@ try {
 document.getElementById("sidepanel-toggle")?.addEventListener("change", (e) => {
   const on = e.target.checked;
 
+  // ORDER IS THE WHOLE FIX, AND IT DIFFERS PER DIRECTION.
+  //
+  // Both of the interesting calls here DESTROY THE PAGE THAT IS RUNNING THEM:
+  // window.close() ends the popup, and setOptions({enabled:false}) tears down
+  // the side panel — and the panel is this very page when the toggle is flipped
+  // from inside it. chrome.storage.local.set is asynchronous, so doing either
+  // one first loses the write.
+  //
+  // That is why the toggle appeared to "default to on": switching it OFF from
+  // inside the panel closed the panel before the write landed, so sidePanel
+  // stayed true in storage and the next open read back ON. Nothing reset it —
+  // the OFF was simply never saved.
+  //
+  // So: the gesture-bound call runs first and synchronously, because
+  // sidePanel.open() is only valid while the gesture is live. Everything that
+  // destroys a page waits for the write to complete.
+  if (on && activeTabId != null) {
+    // Re-enable before opening: turning the toggle off disables the panel for
+    // this tab, and open() on a disabled panel throws.
+    try {
+      chrome.sidePanel.setOptions({ tabId: activeTabId, path: PANEL_PATH, enabled: true })
+        .catch(() => {});
+      chrome.sidePanel.open({ tabId: activeTabId });
+    } catch (_e) { /* Chrome reports its own refusal */ }
+  }
+
   chrome.storage.local.get("settings", (data) => {
     const s = data.settings || {};
     s.sidePanel = on;
     delete s.displayMode;
     chrome.storage.local.set({ settings: s }, () => {
       flashStatus("panel-status", T(on ? "ui.panelOn" : "ui.panelOff"));
+
+      if (activeTabId == null) return;
+      if (on) {
+        // Popup and panel side by side are redundant. Guarded: when this page
+        // IS the panel, closing would shut what was just chosen.
+        if (!runningAsSidePanel) setTimeout(() => window.close(), 150);
+      } else {
+        // Safe only now. This closes the panel, and the panel may be this page.
+        chrome.sidePanel.setOptions({ tabId: activeTabId, enabled: false }).catch(() => {});
+      }
     });
   });
-
-  if (activeTabId == null) return;
-
-  if (on) {
-    // Re-enable first: turning the toggle off disables the panel for this tab,
-    // and open() on a disabled panel throws.
-    chrome.sidePanel.setOptions({ tabId: activeTabId, path: PANEL_PATH, enabled: true })
-      .catch(() => {});
-    // Synchronous, inside the gesture. Wrapped so that a refusal cannot skip
-    // the close below — that coupling is what made one bug look like two.
-    try { chrome.sidePanel.open({ tabId: activeTabId }); } catch (_e) { /* reported by Chrome */ }
-    // The popup and the panel side by side are redundant. Guarded, because when
-    // this page IS the panel, closing would shut what was just chosen.
-    if (!runningAsSidePanel) setTimeout(() => window.close(), 250);
-  } else {
-    chrome.sidePanel.setOptions({ tabId: activeTabId, enabled: false }).catch(() => {});
-  }
 });
 
 // Self-heal. If this popup is open at all while the side-panel setting is ON,
