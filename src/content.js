@@ -1100,8 +1100,17 @@
       const head = document.createElement("div");
       head.id = "cb-float-detail-header";
 
+      // The badge's bar, reused. Two reasons it belongs here rather than a
+      // plain title: the verdict is the single most important thing on the
+      // card, and a user who has seen the inline badge already knows how to
+      // read it. A neutral title bar threw that away and left the verdict to be
+      // inferred from the body text.
+      const ic = document.createElement("span");
+      ic.className = "cb-icon";
+      ic.id = "cb-float-detail-icon";
+
       const t = document.createElement("span");
-      t.className = "cb-float-title";
+      t.className = "cb-label";
       t.id = "cb-float-detail-title";
 
       const sp = document.createElement("span");
@@ -1115,6 +1124,7 @@
       x.setAttribute("aria-label", T("badge.hide"));
       x.addEventListener("click", () => win.remove());
 
+      head.appendChild(ic);
       head.appendChild(t);
       head.appendChild(sp);
       head.appendChild(x);
@@ -1141,8 +1151,18 @@
     }
 
     const v = verdictOf(scan.legitimacy, scan.status, scan.isStoreUrl);
+
+    // Repaint the bar for THIS card. The window is reused between cards, so a
+    // stale verdict class would leave a red bar above a verified result.
+    const head = win.querySelector("#cb-float-detail-header");
+    head.className = "";                       // drop the previous cb-* verdict
+    head.classList.add(v.cls);
+    win.querySelector("#cb-float-detail-icon").textContent = v.icon;
     const titleEl = win.querySelector("#cb-float-detail-title");
-    if (titleEl) titleEl.textContent = scan.advertiserName || scan.company || v.label;
+    titleEl.textContent = v.bar || v.label;
+    // The advertiser is the first thing in the body instead, where a long name
+    // can wrap rather than crushing the bar.
+    win.setAttribute("aria-label", scan.advertiserName || v.label);
 
     const body = win.querySelector("#cb-float-detail-body");
     body.textContent = "";
@@ -1212,6 +1232,14 @@
       wrap.appendChild(row);
     };
 
+    const name = scan.advertiserName || scan.company || "";
+    if (name) {
+      const who = document.createElement("div");
+      who.className = "cb-float-detail-who";
+      who.textContent = name;
+      wrap.appendChild(who);
+    }
+
     const view = window.CrediBytesVerdictView.present(scan, settings.lang);
 
     addSection(T("card.howChecked"));
@@ -1254,6 +1282,17 @@
       /* Both windows share one palette. Scoping it to #cb-floating alone is
          what made the detail window transparent: every var(--f-*) resolved to
          nothing, so it painted straight onto Facebook with no background. */
+      #cb-float-detail {
+        --d-bg: #ffffff; --d-fg: #24262e; --d-border: #dfe1e8;
+        --d-key: #767b8a; --d-sec: #969ab0; --d-line: #ebedf2;
+      }
+      @media (prefers-color-scheme: dark) {
+        #cb-float-detail:not(.cb-light) {
+          --d-bg: #171a24; --d-fg: #e9ebf2; --d-border: #2b3040;
+          --d-key: #9aa0b4; --d-sec: #757b8f; --d-line: #262b38;
+        }
+      }
+
       #cb-floating, #cb-float-detail {
         --f-bg: #ffffff; --f-fg: #12141c; --f-border: #e2e5ec;
         --f-row: #f7f8fa; --f-sub: #5c6270; --f-mute: #969ba8;
@@ -1348,17 +1387,25 @@
         min-width: 260px; min-height: 180px;
         display: flex; flex-direction: column;
       }
+      /* The verdict bar, matching the inline badge. Colours come from the same
+         per-verdict classes the badge uses, so the two surfaces cannot drift to
+         different palettes. */
       #cb-float-detail-header {
         display: flex; align-items: center; gap: 8px; flex-shrink: 0;
-        padding: 11px 13px; cursor: grab;
-        background: var(--f-bg); border-bottom: 1px solid var(--f-border);
+        padding: 10px 12px; cursor: grab;
+        font-size: 12.5px; font-weight: 800; letter-spacing: .3px;
       }
       #cb-float-detail-header:active { cursor: grabbing; }
+      #cb-float-detail-header .cb-icon { font-size: 14px; line-height: 1; }
       #cb-float-detail-title {
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
+      .cb-float-detail-who {
+        font-size: 13px; font-weight: 800; color: var(--d-fg);
+        margin-bottom: 9px; word-break: break-word; line-height: 1.35;
+      }
       .cb-float-detail-close {
-        border: none; background: var(--f-close-bg); color: var(--f-close-fg);
+        border: none; background: rgba(255,255,255,.22); color: inherit;
         width: 22px; height: 22px; border-radius: 6px; cursor: pointer;
         font-size: 15px; line-height: 1; flex-shrink: 0;
       }
@@ -1435,19 +1482,26 @@
         transition: box-shadow .18s ease, transform .18s ease;
       }
       .credibytes-badge:hover { box-shadow: 0 3px 12px rgba(0,0,0,.18); }
-      .credibytes-badge.cb-legitimate { background:#2e9e4f; }
-      .credibytes-badge.cb-likely     { background:#17868c; }
-      .credibytes-badge.cb-unverified { background:#e0aa26; color:#3d2c00; }
-      .credibytes-badge.cb-danger     { background:#d62839; }
+      .credibytes-badge.cb-legitimate,
+      #cb-float-detail-header.cb-legitimate { background:#2e9e4f; color:#fff; }
+      .credibytes-badge.cb-likely,
+      #cb-float-detail-header.cb-likely     { background:#17868c; color:#fff; }
+      .credibytes-badge.cb-unverified,
+      #cb-float-detail-header.cb-unverified { background:#e0aa26; color:#3d2c00; }
+      .credibytes-badge.cb-danger,
+      #cb-float-detail-header.cb-danger     { background:#d62839; color:#fff; }
       /* Violet: deliberately not green (not verified) and not red (not an
          accusation) — a registrant was identified but the link proves nothing. */
-      .credibytes-badge.cb-namematch  { background:#7a5cd6; }
+      .credibytes-badge.cb-namematch,
+      #cb-float-detail-header.cb-namematch  { background:#7a5cd6; color:#fff; }
       /* Darker than cb-danger and separated by a ring, because these two are the
          only red states and they mean opposite things about the link: an
          unregistered app was never authorised, a revoked one was. Hue alone is
          too weak a distinction to carry that. */
-      .credibytes-badge.cb-revoked {
-        background:#6d1220; box-shadow: inset 0 0 0 2px rgba(255,255,255,.28);
+      .credibytes-badge.cb-revoked,
+      #cb-float-detail-header.cb-revoked {
+        background:#6d1220; color:#fff;
+        box-shadow: inset 0 0 0 2px rgba(255,255,255,.28);
       }
 
       /* Official channels are real links. They must look reachable inside a
@@ -1508,7 +1562,7 @@
           --d-key: #9aa0b4; --d-sec: #757b8f; --d-line: #262b38;
         }
       }
-      .credibytes-badge.cb-dark {
+      .credibytes-badge.cb-dark, #cb-float-detail.cb-dark {
         --d-bg: #171a24; --d-fg: #e9ebf2; --d-border: #2b3040;
         --d-key: #9aa0b4; --d-sec: #757b8f; --d-line: #262b38;
       }
@@ -1522,19 +1576,32 @@
         max-height: 320px; overflow-y: auto;
         animation: cb-pop .16s ease-out;
       }
-      .credibytes-badge .cb-row {
+      /* Shared by the badge and the widget's detail window. These were scoped
+         to .credibytes-badge alone, so the widget rendered the same markup with
+         none of the styling: keys and values ran together as one paragraph
+         ("SEC No.CS202001294", "RegistrantLf Lending Services Corporation") and
+         the section headings were indistinguishable from body text. */
+      .credibytes-badge .cb-row, #cb-float-detail .cb-row {
         display: flex; gap: 8px; padding: 3px 0; line-height: 1.5;
       }
-      .credibytes-badge .cb-key {
+      .credibytes-badge .cb-key, #cb-float-detail .cb-key {
         flex-shrink: 0; min-width: 92px; color: var(--d-key); font-weight: 600;
       }
-      .credibytes-badge .cb-val { color: var(--d-fg); word-break: break-word; }
-      .credibytes-badge .cb-section {
+      .credibytes-badge .cb-val, #cb-float-detail .cb-val {
+        color: var(--d-fg); word-break: break-word;
+      }
+      .credibytes-badge .cb-section, #cb-float-detail .cb-section {
         margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--d-line);
         font-size: 9.5px; font-weight: 800; text-transform: uppercase;
         letter-spacing: .7px; color: var(--d-sec);
       }
-      .credibytes-badge .cb-section:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+      .credibytes-badge .cb-section:first-child,
+      #cb-float-detail .cb-section:first-child {
+        margin-top: 0; padding-top: 0; border-top: none;
+      }
+      /* Links inside the detail: the badge gets these from its own rule set. */
+      #cb-float-detail .cb-link { color: var(--f-chip-bg); text-decoration: none; }
+      #cb-float-detail .cb-link:hover { text-decoration: underline; }
 
       @media (prefers-reduced-motion: reduce) {
         .credibytes-badge, .credibytes-badge *, #cb-floating, #cb-floating * {

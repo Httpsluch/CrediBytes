@@ -154,14 +154,19 @@ check("detail renders rows", expanded.rows > 0, "rows=" + expanded.rows);
     rows[0].click();
     setTimeout(() => {
       const w = document.getElementById("cb-float-detail");
-      const first = w?.querySelector("#cb-float-detail-title")?.textContent || "";
+      // The title is now the VERDICT BAR, which is identical for two cards of
+      // the same verdict. The advertiser moved into the body, where a long name
+      // can wrap instead of crushing the bar — so identity is checked there.
+      const first = w?.querySelector(".cb-float-detail-who")?.textContent || "";
       rows[1].click();
       setTimeout(() => {
         const w2 = document.getElementById("cb-float-detail");
         res({
           opened: !!w,
           first,
-          second: w2?.querySelector("#cb-float-detail-title")?.textContent || "",
+          second: w2?.querySelector(".cb-float-detail-who")?.textContent || "",
+          bar: w2?.querySelector("#cb-float-detail-title")?.textContent || "",
+          barClass: w2?.querySelector("#cb-float-detail-header")?.className || "",
           windows: document.querySelectorAll("#cb-float-detail").length,
           sections: w2?.querySelectorAll(".cb-section").length || 0,
         });
@@ -178,6 +183,11 @@ check("detail renders rows", expanded.rows > 0, "rows=" + expanded.rows);
   check("and the replacement shows the second card",
         detail.second && detail.second !== detail.first,
         `${detail.first} -> ${detail.second}`);
+  // The window is reused between cards, so a stale verdict class would leave a
+  // red bar above a verified result.
+  check("the detail carries the badge's verdict bar",
+        /UNVERIFIED/i.test(detail.bar) && /cb-unverified/.test(detail.barClass),
+        `${detail.bar} | ${detail.barClass}`);
 
   // The detail belongs to the list; it must not be left stranded on the page.
   const afterClose = await page.evaluate(() => new Promise(res => {
