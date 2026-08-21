@@ -79,5 +79,55 @@ for (const [w, h, param, expectPanel] of [
   await page.close();
 }
 
+// ── The gesture rule, checked in the source ────────────────────────────────
+//
+// chrome.sidePanel.open() may only be called while a user gesture is still in
+// scope. Nesting it inside a chrome.tabs.query callback loses that gesture, so
+// Chrome refuses the call — and because the refusal threw, the window.close()
+// that followed never ran either: the panel did not open AND the popup stayed
+// on screen. One bug that presented as two.
+//
+// A static check, because reproducing a real gesture refusal needs a loaded
+// extension rather than a page harness.
+{
+  const openCalls = [...popupJs.matchAll(/chrome\.sidePanel\.open\(/g)];
+  r.check("sidePanel.open() is called at least once", openCalls.length > 0,
+          String(openCalls.length));
+
+  // Brace-match each tabs.query callback body and check none of them contains
+  // an open(). Walking back to "the nearest tabs.query" was too crude — it also
+  // caught the module-level lookup that legitimately sits above the handler.
+  let nested = 0;
+  for (const q of [...popupJs.matchAll(/chrome\.tabs\??\.?query/g)]) {
+    let i = popupJs.indexOf("{", q.index);
+    // Find the callback body: skip the argument object, then the arrow body.
+    let depth = 0, start = -1;
+    for (let k = q.index; k < popupJs.length; k++) {
+      const c = popupJs[k];
+      if (c === "{") { if (depth === 0 && start === -1) start = k; depth++; }
+      else if (c === "}") {
+        depth--;
+        if (depth === 0) {
+          const body = popupJs.slice(start, k + 1);
+          if (/sidePanel\.open\(/.test(body)) nested++;
+          if (popupJs.slice(k + 1, k + 40).includes(");")) break;
+          start = -1;
+        }
+      }
+      if (c === ";" && depth === 0) break;
+    }
+  }
+  r.check("no sidePanel.open() sits inside a tabs.query callback",
+          nested === 0, `${nested} nested call(s)`);
+
+  r.check("the active tab id is resolved ahead of the gesture",
+          /let activeTabId/.test(popupJs) && /chrome\.sidePanel\.open\(\{\s*tabId:\s*activeTabId/.test(popupJs),
+          "activeTabId not used for open()");
+
+  // A refusal must not take the popup-close with it.
+  r.check("open() is wrapped so a refusal cannot skip what follows",
+          /try\s*\{\s*chrome\.sidePanel\.open\(/.test(popupJs), "not wrapped");
+}
+
 await browser.close();
 process.exit(r.finish() ? 1 : 0);

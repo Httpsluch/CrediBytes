@@ -693,39 +693,71 @@ document.querySelectorAll("input[name='display-result']").forEach(radio => {
 // The toolbar-click behaviour is applied by background.js, which watches this
 // setting. Opening/closing the panel here is the immediate feedback for the
 // flip itself.
+// The active tab, resolved at load so the toggle does not have to look it up.
+//
+// THIS IS THE WHOLE FIX. sidePanel.open() may only be called while a user
+// gesture is still in scope, and a chrome.tabs.query callback is a later task —
+// the gesture is gone by the time it runs. So the previous version threw on
+// every flip, and because it threw, the window.close() two lines below never
+// ran either: the panel did not open AND the popup stayed put, which is exactly
+// what the toggle looked like from the outside.
+//
+// Resolving the tab id in advance lets open() run synchronously inside the
+// change handler, where the gesture is still live.
+let activeTabId = null;
+// Guarded. An unguarded call here throws when chrome.tabs is absent, and a
+// module-level throw takes every statement below it with it — including the
+// panel-layout fallback, which is how one missing API silently broke the
+// popup's sizing as well as its settings.
+try {
+  chrome.tabs?.query?.({ active: true, currentWindow: true }, (tabs) => {
+    activeTabId = tabs && tabs[0] ? tabs[0].id : null;
+  });
+} catch (_e) { /* no tabs API in this context */ }
+
 document.getElementById("sidepanel-toggle")?.addEventListener("change", (e) => {
   const on = e.target.checked;
+
   chrome.storage.local.get("settings", (data) => {
     const s = data.settings || {};
     s.sidePanel = on;
     delete s.displayMode;
     chrome.storage.local.set({ settings: s }, () => {
-      flashStatus("panel-status", on
-        ? "Side panel enabled — the toolbar icon now opens the panel."
-        : "Side panel disabled — the toolbar icon opens the popup again.");
+      flashStatus("panel-status", T(on ? "ui.panelOn" : "ui.panelOff"));
     });
   });
 
-  // NOT nested inside the storage callback: sidePanel.open() must run inside
-  // the user-gesture call stack, and a storage callback is a later task.
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tab = tabs[0];
-    if (!tab) return;
-    if (on) {
-      // Re-enable before opening: turning the toggle off disables the panel for
-      // the tab, and open() on a disabled panel throws.
-      chrome.sidePanel.setOptions({ tabId: tab.id, path: PANEL_PATH, enabled: true })
-        .catch(() => {});
-      chrome.sidePanel.open({ tabId: tab.id });
-      // The popup and the panel side by side are redundant. Guarded, because
-      // when this page IS the panel, closing would shut what was just chosen.
-      if (!runningAsSidePanel) setTimeout(() => window.close(), 250);
-    } else {
-      // Closes the panel outright, which is what "off" should mean.
-      chrome.sidePanel.setOptions({ tabId: tab.id, enabled: false }).catch(() => {});
+  if (activeTabId == null) return;
+
+  if (on) {
+    // Re-enable first: turning the toggle off disables the panel for this tab,
+    // and open() on a disabled panel throws.
+    chrome.sidePanel.setOptions({ tabId: activeTabId, path: PANEL_PATH, enabled: true })
+      .catch(() => {});
+    // Synchronous, inside the gesture. Wrapped so that a refusal cannot skip
+    // the close below — that coupling is what made one bug look like two.
+    try { chrome.sidePanel.open({ tabId: activeTabId }); } catch (_e) { /* reported by Chrome */ }
+    // The popup and the panel side by side are redundant. Guarded, because when
+    // this page IS the panel, closing would shut what was just chosen.
+    if (!runningAsSidePanel) setTimeout(() => window.close(), 250);
+  } else {
+    chrome.sidePanel.setOptions({ tabId: activeTabId, enabled: false }).catch(() => {});
+  }
+});
+
+// Self-heal. If this popup is open at all while the side-panel setting is ON,
+// the toolbar behaviour is stale — the click should have opened the panel. That
+// happens if a setPopup call was lost, or the worker restarted mid-write.
+// Re-applying costs nothing and fixes the NEXT click rather than hijacking this
+// one, which would yank the window out from under the user.
+try {
+  chrome.storage.local.get("settings", (data) => {
+    if (normaliseSettings(data.settings || {}).sidePanel && !runningAsSidePanel) {
+      chrome.runtime.sendMessage({ type: "SYNC_ACTION_BEHAVIOUR" },
+        () => void chrome.runtime.lastError);
     }
   });
-});
+} catch (_e) { /* no runtime in this context */ }
 
 // ── Side panel ────────────────────────────────────────────────────────────────
 // Safety net for a panel opened without ?panel=1 — Chrome persists sidePanel

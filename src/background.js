@@ -331,6 +331,14 @@ async function readListing(url, advertiserName) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
+  // Asked for by the popup when it opens while the side-panel setting is ON —
+  // a state that should not happen, because the click should have opened the
+  // panel. Re-applying repairs the toolbar for the next click.
+  if (message.type === "SYNC_ACTION_BEHAVIOUR") {
+    syncActionBehaviour().then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
   if (message.type === "CHECK_LISTING") {
     // The advertiser name feeds dev_matches_advertiser, one of the 15 features.
     readListing(message.url, message.advertiserName)
