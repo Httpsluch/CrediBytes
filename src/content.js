@@ -34,7 +34,7 @@
   // chrome.sidePanel.open() — the page itself never reacted at all.
   const settings = {
     scanningEnabled: true,
-    displayMode: "badge",
+    displayResult: "badge",
     // "system" | "light" | "dark". The injected UI CANNOT use
     // prefers-color-scheme alone: that follows the operating system, so picking
     // Light in Settings left the badge detail and the floating widget dark on a
@@ -94,6 +94,15 @@
   // wrappers fail quietly instead and shut the observer down on first detection.
 
   let contextDead = false;
+
+  // One reading of the stored shape, old or new. Mirrors normaliseSettings()
+  // in popup.js; if these two ever disagree the toggle and the page surface
+  // silently drift apart.
+  function resolveResult(s) {
+    if (!s) return "badge";
+    if (s.displayResult) return s.displayResult;
+    return s.displayMode === "floating" ? "floating" : "badge";
+  }
 
   function extensionAlive() {
     if (contextDead) return false;
@@ -925,6 +934,9 @@
     closeBtn.setAttribute("aria-label", "Close CrediBytes panel");
     closeBtn.addEventListener("click", () => {
       widget.style.display = "none";
+      // The detail window belongs to the list. Leaving it behind would strand a
+      // card on the page with nothing to reopen or close it from.
+      document.getElementById("cb-float-detail")?.remove();
       safeStorageSet({ floatingOpen: false });
     });
 
@@ -936,6 +948,14 @@
     const content = document.createElement("div");
     content.id = "cb-float-content";
     content.textContent = "Scanning for OLA ads...";
+    // Draws the next batch as the body nears its end, so an uncapped list stays
+    // cheap while scrolling. popup.js uses an IntersectionObserver for this; a
+    // scroll handler is simpler here because the body is a plain box we own.
+    content.addEventListener("scroll", () => {
+      if (content.scrollTop + content.clientHeight >= content.scrollHeight - 40) {
+        drawFloatBatch();
+      }
+    });
 
     widget.appendChild(header);
     widget.appendChild(content);
@@ -968,15 +988,18 @@
     if (!content) return;
 
     safeStorageGet("scans", (data) => {
-      const all   = data.scans || [];
-      const scans = all.slice(0, 6);
+      // No cap. The widget used to show 6 while the header counted all of
+      // them, so the number and the list disagreed. Rows are drawn in batches
+      // as the body is scrolled instead — the same approach popup.js uses,
+      // because rendering 2000 rows at once stutters during active scanning.
+      const all = data.scans || [];
 
       const countEl = document.getElementById("cb-float-count");
       if (countEl) countEl.textContent = String(all.length);
 
       content.textContent = "";
 
-      if (scans.length === 0) {
+      if (all.length === 0) {
         const empty = document.createElement("div");
         empty.className = "cb-float-empty";
         empty.textContent = "No OLA ads detected yet.";
@@ -984,7 +1007,26 @@
         return;
       }
 
-      scans.forEach(scan => {
+      floatAll = all;
+      floatDrawn = 0;
+      drawFloatBatch();
+    });
+  }
+
+  // Widget rows, drawn FLOAT_BATCH at a time as the body is scrolled.
+  const FLOAT_BATCH = 30;
+  let floatAll = [];
+  let floatDrawn = 0;
+
+  function drawFloatBatch() {
+    const content = document.getElementById("cb-float-content");
+    if (!content) return;
+    content.querySelector(".cb-float-more")?.remove();
+
+    const slice = floatAll.slice(floatDrawn, floatDrawn + FLOAT_BATCH);
+    floatDrawn += slice.length;
+
+    slice.forEach(scan => {
         // Reuse the same four-state mapping as the badge so the floating
         // widget can't disagree with the badge about a verdict. The old code
         // had its own three-state map and never showed "Unregistered App".
@@ -1012,9 +1054,192 @@
         text.appendChild(verdict);
         row.appendChild(dot);
         row.appendChild(text);
+
+        // Each row opens the detail window. A real button would be better for
+        // a11y, but the row is already a composite; role + tabindex + key
+        // handling gives the same behaviour without restructuring the markup.
+        row.setAttribute("role", "button");
+        row.tabIndex = 0;
+        const open = () => openFloatDetail(scan);
+        row.addEventListener("click", open);
+        row.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+        });
+
         content.appendChild(row);
-      });
     });
+
+    if (floatDrawn < floatAll.length) {
+      const more = document.createElement("div");
+      more.className = "cb-float-more";
+      more.textContent = `${floatAll.length - floatDrawn} more`;
+      content.appendChild(more);
+    }
+  }
+
+  // ── Widget detail window ────────────────────────────────────────────────────
+  //
+  // A SECOND floating window, beside the list. One at a time by design: clicking
+  // another card refills this window rather than stacking a new one, so a user
+  // who forgets to close them cannot bury the page. Reusing one node also means
+  // no flicker on switch.
+  //
+  // It renders from the stored scan through CrediBytesVerdictView.present() —
+  // the same module the badge and the popup card use, so all three cannot
+  // disagree about a verdict. That module exists precisely because verdictOf()
+  // and the SAVE_SCAN payload were each duplicated once and drifted.
+  function openFloatDetail(scan) {
+    const list = document.getElementById("cb-floating");
+    let win = document.getElementById("cb-float-detail");
+
+    if (!win) {
+      win = document.createElement("div");
+      win.id = "cb-float-detail";
+      applyThemeTo(win);
+
+      const head = document.createElement("div");
+      head.id = "cb-float-detail-header";
+
+      const t = document.createElement("span");
+      t.className = "cb-float-title";
+      t.id = "cb-float-detail-title";
+
+      const sp = document.createElement("span");
+      sp.className = "cb-float-spacer";
+
+      const x = document.createElement("button");
+      x.type = "button";
+      x.className = "cb-float-detail-close";
+      x.textContent = "×";
+      x.title = T("badge.hide");
+      x.setAttribute("aria-label", T("badge.hide"));
+      x.addEventListener("click", () => win.remove());
+
+      head.appendChild(t);
+      head.appendChild(sp);
+      head.appendChild(x);
+
+      const body = document.createElement("div");
+      body.id = "cb-float-detail-body";
+
+      win.appendChild(head);
+      win.appendChild(body);
+      document.body.appendChild(win);
+
+      // Opens beside the list widget, then is free to be dragged anywhere.
+      if (list) {
+        const r = list.getBoundingClientRect();
+        const w = 320;
+        // Flip to the right edge when there is no room on the left.
+        const left = r.left - w - 10 >= 8 ? r.left - w - 10 : Math.min(r.right + 10, window.innerWidth - w - 8);
+        win.style.left = left + "px";
+        win.style.top = r.top + "px";
+        win.style.right = "auto";
+        win.style.bottom = "auto";
+      }
+      makeDraggable(win, head);
+    }
+
+    const v = verdictOf(scan.legitimacy, scan.status, scan.isStoreUrl);
+    const titleEl = win.querySelector("#cb-float-detail-title");
+    if (titleEl) titleEl.textContent = scan.advertiserName || scan.company || v.label;
+
+    const body = win.querySelector("#cb-float-detail-body");
+    body.textContent = "";
+    body.appendChild(buildScanDetail(scan, v));
+    body.scrollTop = 0;
+    return win;
+  }
+
+  // Shared drag behaviour. The list widget had this inline; the detail window
+  // needs the same, and two copies of a pointer-tracking loop is how one of
+  // them ends up with the mouseup listener missing.
+  function makeDraggable(el, handle) {
+    let dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
+    handle.addEventListener("mousedown", (e) => {
+      if (e.target.closest("button")) return;      // the close button is not a grip
+      dragging = true;
+      sx = e.clientX; sy = e.clientY;
+      ox = el.offsetLeft; oy = el.offsetTop;
+      e.preventDefault();
+    });
+    document.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      el.style.left = (ox + e.clientX - sx) + "px";
+      el.style.top = (oy + e.clientY - sy) + "px";
+      el.style.right = "auto";
+      el.style.bottom = "auto";
+    });
+    document.addEventListener("mouseup", () => { dragging = false; });
+  }
+
+  // The same four sections the badge and the popup card render, from the same
+  // view module and the same i18n keys.
+  function buildScanDetail(scan, v) {
+    const wrap = document.createElement("div");
+    wrap.className = "cb-detail cb-detail-open";
+
+    const addSection = (text) => {
+      const h = document.createElement("div");
+      h.className = "cb-section";
+      h.textContent = text;
+      wrap.appendChild(h);
+    };
+    const addRow = (labelText, valueText, link) => {
+      if (!valueText) return;
+      const row = document.createElement("div");
+      row.className = "cb-row";
+      if (labelText) {
+        const k = document.createElement("span");
+        k.className = "cb-key";
+        k.textContent = labelText;
+        row.appendChild(k);
+      }
+      let val;
+      if (link) {
+        val = document.createElement("a");
+        val.href = valueText;
+        val.target = "_blank";
+        val.rel = "noopener noreferrer";
+        val.className = "cb-val cb-link";
+        val.addEventListener("click", (e) => e.stopPropagation());
+      } else {
+        val = document.createElement("span");
+        val.className = "cb-val";
+      }
+      val.textContent = valueText;
+      row.appendChild(val);
+      wrap.appendChild(row);
+    };
+
+    const view = window.CrediBytesVerdictView.present(scan, settings.lang);
+
+    addSection(T("card.howChecked"));
+    for (const line of view.checks) addRow("", "• " + line);
+    addSection(T("card.whatMeans"));
+    addRow("", view.means);
+    addSection(T("card.action"));
+    addRow("", view.action);
+
+    // A stored scan carries the registrant's declared channels only as
+    // officialUrl; the full record is looked up so the store links appear too.
+    const ref = scan.sec
+      ? (window.CrediBytesMatcher.findBySec ? window.CrediBytesMatcher.findBySec(scan.sec) : null)
+      : null;
+    const sugg = (!scan.company && scan.suggestion) ? scan.suggestion : null;
+    if (scan.company || scan.sec || scan.officialUrl || sugg) {
+      addSection(T(sugg ? "sec.possibleMatch"
+        : scan.legitimacy === "name_match_only" ? "sec.registrantClaimed"
+        : "sec.secRegistration"));
+      addRow(T("row.secNo"), sugg ? sugg.sec : scan.sec);
+      addRow(T("row.registrant"), sugg ? sugg.company : scan.company);
+      if (ref) {
+        if (ref.playUrl)  addRow(T("row.officialPlay"), ref.playUrl, true);
+        if (ref.appleUrl) addRow(T("row.officialApple"), ref.appleUrl, true);
+      }
+      addRow(T("row.officialSite"), sugg ? sugg.websiteUrl : scan.officialUrl, true);
+    }
+    return wrap;
   }
 
   function injectFloatingStyles() {
@@ -1051,14 +1276,22 @@
       }
 
       #cb-floating {
-        position: fixed; bottom: 80px; right: 16px; width: 280px;
+        position: fixed; bottom: 80px; right: 16px;
+        width: 300px; height: 380px;
         background: var(--f-bg); color: var(--f-fg);
         border: 1px solid var(--f-border); border-radius: 14px;
         box-shadow: 0 12px 32px var(--f-shadow);
         z-index: 2147483000;
         font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-        overflow: hidden; user-select: none;
+        user-select: none;
         animation: cb-pop .18s ease-out;
+        /* Free resize in both directions, with a floor so it cannot be dragged
+           to nothing. CSS resize needs overflow != visible, which is also what
+           the scrolling body needs, so the two requirements agree.
+           No maximum: the user decides. */
+        resize: both; overflow: auto;
+        min-width: 240px; min-height: 200px;
+        display: flex; flex-direction: column;
       }
       #cb-float-header {
         display: flex; align-items: center; gap: 8px;
@@ -1083,7 +1316,56 @@
       }
       #cb-float-close:active { transform: rotate(90deg) scale(.9); }
       #cb-float-close:focus-visible { outline: 2px solid #76b729; outline-offset: 2px; }
-      #cb-float-content { padding: 8px; max-height: 260px; overflow-y: auto; }
+      /* flex:1 rather than a fixed max-height, so the body grows with the
+         window when the user resizes it. */
+      #cb-float-content { padding: 8px; flex: 1; min-height: 0; overflow-y: auto; }
+      #cb-float-header { flex-shrink: 0; }
+      .cb-float-more {
+        font-size: 10.5px; color: var(--f-mute); text-align: center;
+        padding: 7px 0 3px;
+      }
+      .cb-float-row { cursor: pointer; }
+      .cb-float-row:focus-visible {
+        outline: 2px solid var(--f-chip-bg); outline-offset: 1px;
+      }
+
+      /* ── Detail window ────────────────────────────────────────────────────
+         A second window beside the list, not a panel inside it: the list stays
+         usable while a card is open, and one window is reused for every card so
+         they cannot stack up. */
+      #cb-float-detail {
+        position: fixed; width: 320px; max-height: 62vh;
+        background: var(--f-bg); color: var(--f-fg);
+        border: 1px solid var(--f-border); border-radius: 14px;
+        box-shadow: 0 12px 32px var(--f-shadow);
+        z-index: 2147483001;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        animation: cb-pop .18s ease-out;
+        resize: both; overflow: auto;
+        min-width: 260px; min-height: 180px;
+        display: flex; flex-direction: column;
+      }
+      #cb-float-detail-header {
+        display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+        padding: 11px 13px; cursor: grab;
+        background: var(--f-bg); border-bottom: 1px solid var(--f-border);
+      }
+      #cb-float-detail-header:active { cursor: grabbing; }
+      #cb-float-detail-title {
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .cb-float-detail-close {
+        border: none; background: var(--f-close-bg); color: var(--f-close-fg);
+        width: 22px; height: 22px; border-radius: 6px; cursor: pointer;
+        font-size: 15px; line-height: 1; flex-shrink: 0;
+      }
+      #cb-float-detail-body {
+        padding: 10px 13px 13px; flex: 1; min-height: 0; overflow-y: auto;
+        user-select: text;
+      }
+      /* The badge's detail styles assume it is hidden until toggled; here it is
+         always open and is not nested in a badge. */
+      #cb-float-detail-body .cb-detail-open { display: block; }
       .cb-float-empty {
         padding: 20px 10px; text-align: center; font-size: 12px; color: var(--f-mute);
       }
@@ -1304,9 +1586,9 @@
 
     // Badge is the on-page surface for both "badge" and "sidepanel" modes;
     // sidepanel additionally mirrors the history in Chrome's panel.
-    if (settings.displayMode === "badge" || settings.displayMode === "sidepanel") {
+    if (settings.displayResult === "badge") {
       injectBadge(adEl, matchResult, stage1Result, advertiserName);
-    } else if (settings.displayMode === "floating") {
+    } else if (settings.displayResult === "floating") {
       updateFloatingContent();
     }
   }
@@ -1390,6 +1672,8 @@
 
   function removeFloatingWidget() {
     document.getElementById("cb-floating")?.remove();
+    // The detail window belongs to the list; it must not outlive it.
+    document.getElementById("cb-float-detail")?.remove();
   }
 
   // Ads are marked PROCESSED so the MutationObserver doesn't re-handle them.
@@ -1412,7 +1696,7 @@
       return;
     }
 
-    if (settings.displayMode === "floating") {
+    if (settings.displayResult === "floating") {
       injectFloatingStyles();
       ensureFloatingWidget();
       const w = document.getElementById("cb-floating");
@@ -1442,12 +1726,16 @@
 
     safeStorageGet(["settings", "floatingOpen"], (data) => {
       settings.scanningEnabled = data.settings?.scanningEnabled !== false;
-      settings.displayMode     = data.settings?.displayMode || "badge";
+      // displayMode used to be one three-way value; it is now displayMode
+      // (side panel on/off, which content.js does not care about) and
+      // displayResult. A legacy "floating" still resolves, so a user who has
+      // not triggered onInstalled keeps the surface they chose.
+      settings.displayResult   = resolveResult(data.settings);
       settings.theme           = data.settings?.theme || "system";
       settings.lang            = data.settings?.lang || "en";
       window.CrediBytesI18n?.setLang(settings.lang);
 
-      if (settings.scanningEnabled && settings.displayMode === "floating") {
+      if (settings.scanningEnabled && settings.displayResult === "floating") {
         injectFloatingStyles();
         ensureFloatingWidget();
         if (data.floatingOpen !== false) {
@@ -1470,14 +1758,14 @@
 
       if (changes.settings) {
         const next = changes.settings.newValue || {};
-        const prevMode     = settings.displayMode;
+        const prevMode     = settings.displayResult;
         const prevScanning = settings.scanningEnabled;
 
         const prevTheme = settings.theme;
         const prevLang  = settings.lang;
 
         settings.scanningEnabled = next.scanningEnabled !== false;
-        settings.displayMode     = next.displayMode || "badge";
+        settings.displayResult   = resolveResult(next);
         settings.theme           = next.theme || "system";
         settings.lang            = next.lang || "en";
         window.CrediBytesI18n?.setLang(settings.lang);
@@ -1490,14 +1778,14 @@
         // every badge, clears the PROCESSED marks and rescans, which is exactly
         // that; reusing it avoids a second, subtly different teardown path.
         if (settings.lang !== prevLang ||
-            settings.displayMode !== prevMode ||
+            settings.displayResult !== prevMode ||
             settings.scanningEnabled !== prevScanning) {
           applySettings();
         }
       }
 
       // Keep the floating list live as new scans arrive from any tab.
-      if (changes.scans && settings.displayMode === "floating") {
+      if (changes.scans && settings.displayResult === "floating") {
         updateFloatingContent();
       }
     });

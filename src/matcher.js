@@ -365,6 +365,18 @@
     return false;
   }
 
+  // A stored scan keeps only the SEC number, not the whole record, so the
+  // widget's detail window looks the registrant back up to show every declared
+  // channel. Linear over ~187 records and called once per card open.
+  function findBySec(sec) {
+    if (!sec) return null;
+    const want = String(sec).trim().toUpperCase();
+    for (const ref of SEC_REFERENCE) {
+      if (String(ref.sec || "").trim().toUpperCase() === want) return ref;
+    }
+    return null;
+  }
+
   // ── Main matcher ───────────────────────────────────────────────────────────
 
   // The revoked-list checks are applied here rather than inside runMatch() so
@@ -583,6 +595,6 @@
 
   window.CrediBytesMatcher = { matchUrl, playPackageId, appleAppId, normHost, isStoreUrl, isSocialUrl,
                                mentionsKnownRegistrant, lookupRevoked, revokedWording,
-                               revokedCount: revokedIndex.size };
+                               revokedCount: revokedIndex.size , findBySec};
 
 })();

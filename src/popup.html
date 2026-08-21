@@ -14,9 +14,6 @@
   <div class="header">
     <div class="header-logo"><img src="../icons/icon32.png" alt="CrediBytes"></div>
     <h1>CrediBytes</h1>
-    <!-- Hidden when already running as the side panel (see popup.js) -->
-    <button class="expand-btn" id="expand-btn" type="button"
-            title="Open in side panel" aria-label="Open in side panel">→</button>
   </div>
 
   <!-- Segmented switch. Real <button>s so both halves are keyboard reachable. -->
@@ -81,26 +78,43 @@
       </div>
     </div>
 
+    <!-- WHERE CrediBytes' own UI opens. Independent of what appears on the
+         page, which is Display Result below. These used to be one three-way
+         radio, which forced a false choice: "Side Panel" actually meant
+         "badges PLUS the panel", so it was never a peer of the other two. -->
     <div class="settings-section">
       <div class="settings-label" data-i18n="ui.displayMode">Display Mode</div>
+      <!-- Same .row + .switch pattern as Scanning above, deliberately: a second
+           toggle style for the same kind of control is how two things that mean
+           "on/off" start looking like different concepts. -->
+      <div class="row">
+        <div class="row-text">
+          <div class="row-title" data-i18n="ui.sidePanel">Side Panel</div>
+          <div data-i18n="ui.sidePanelDesc" class="row-sub">Open CrediBytes in Chrome's side panel instead of a popup</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="sidepanel-toggle" aria-label="Open in side panel">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="settings-status" id="panel-status" role="status"></div>
+    </div>
+
+    <!-- WHAT appears on the Facebook page itself. -->
+    <div class="settings-section">
+      <div class="settings-label" data-i18n="ui.displayResult">Display Result</div>
       <div class="mode-group">
         <label class="mode-row">
-          <input type="radio" name="display-mode" value="badge" checked>
+          <input type="radio" name="display-result" value="badge" checked>
           <span class="mode-dot" aria-hidden="true"></span>
           <span data-i18n="ui.inlineBadge" class="mode-name">Inline Badge</span>
           <span data-i18n="ui.inlineBadgeDesc" class="mode-desc">Adds a verdict label directly above each ad</span>
         </label>
         <label class="mode-row">
-          <input type="radio" name="display-mode" value="floating">
+          <input type="radio" name="display-result" value="floating">
           <span class="mode-dot" aria-hidden="true"></span>
           <span data-i18n="ui.floatingWidget" class="mode-name">Floating Widget</span>
           <span data-i18n="ui.floatingHint" class="mode-desc">Draggable summary of the page</span>
-        </label>
-        <label class="mode-row">
-          <input type="radio" name="display-mode" value="sidepanel">
-          <span class="mode-dot" aria-hidden="true"></span>
-          <span data-i18n="ui.sidePanel" class="mode-name">Side Panel</span>
-          <span data-i18n="ui.sidePanelDesc" class="mode-desc">Badges on ads plus Chrome's side panel</span>
         </label>
       </div>
       <div class="settings-status" id="mode-status" role="status"></div>
@@ -123,6 +137,12 @@
         <button class="seg-btn" type="button" data-lang="tl" role="radio" aria-checked="false">Tagalog</button>
       </div>
       <div class="row-sub" style="margin-top:7px" data-i18n="ui.langHint">Applies to badges on Facebook as well.</div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-label" data-i18n="ui.reportBug">Report a bug</div>
+      <div class="row-sub" style="margin-bottom:9px" data-i18n="ui.reportBugDesc">Opens a short form in a new tab. Your extension version and settings are filled in; nothing about the pages you visit is included.</div>
+      <button class="ghost-btn" id="report-bug-btn" type="button" data-i18n="ui.reportBugBtn">Report a bug</button>
     </div>
 
     <div class="settings-section">

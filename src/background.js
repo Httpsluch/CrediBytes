@@ -14,7 +14,10 @@ const BACKEND_URL = 'https://credibytes-backend.onrender.com'
 
 const DEFAULT_SETTINGS = {
   scanningEnabled: true,
-  displayMode: "badge",
+  // Two independent settings, not one three-way value. See the migration in
+  // onInstalled below for why they were split.
+  sidePanel: false,
+  displayResult: "badge",
 };
 
 // onInstalled fires on UPDATE as well as first install, so this must not
@@ -28,7 +31,20 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (!Array.isArray(data.scans)) patch.scans = [];
   // Merge so a newly added setting gets its default without discarding
   // existing choices.
-  patch.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
+  const stored = { ...(data.settings || {}) };
+  // MIGRATION, run once on update. The old displayMode conflated where the
+  // extension's own UI opens with what is drawn on the page: "sidepanel" meant
+  // "badges PLUS the panel", so it was never a peer of "badge" and "floating".
+  // An old value is translated rather than dropped, then removed so it cannot
+  // resurrect the previous choice later.
+  if (typeof stored.displayMode === "string") {
+    if (stored.sidePanel === undefined) stored.sidePanel = stored.displayMode === "sidepanel";
+    if (stored.displayResult === undefined) {
+      stored.displayResult = stored.displayMode === "floating" ? "floating" : "badge";
+    }
+    delete stored.displayMode;
+  }
+  patch.settings = { ...DEFAULT_SETTINGS, ...stored };
 
   await chrome.storage.local.set(patch);
 });
@@ -41,8 +57,15 @@ chrome.runtime.onInstalled.addListener(async () => {
 //
 // The 360px popup is also cramped for a long scan list; the panel is
 // full-height, which is why this mode is worth wiring up properly.
-async function applyActionBehaviour(mode) {
-  const useSidePanel = mode === "sidepanel";
+async function applyActionBehaviour(settings) {
+  // Accepts the settings object, not a mode string. displayMode used to be a
+  // single three-way value; it is now displayMode(panel bool) + displayResult.
+  // A stored legacy "sidepanel" still resolves, so an existing user keeps the
+  // behaviour they chose.
+  const s = settings || {};
+  const useSidePanel = typeof s.sidePanel === "boolean"
+    ? s.sidePanel
+    : s.displayMode === "sidepanel";
   try {
     // Empty string disables the popup so the click reaches the side panel.
     await chrome.action.setPopup({ popup: useSidePanel ? "" : "src/popup.html" });
@@ -54,7 +77,7 @@ async function applyActionBehaviour(mode) {
 
 async function syncActionBehaviour() {
   const data = await chrome.storage.local.get("settings");
-  await applyActionBehaviour(data.settings?.displayMode || "badge");
+  await applyActionBehaviour(data.settings || {});
 }
 
 chrome.runtime.onStartup.addListener(syncActionBehaviour);
@@ -62,7 +85,7 @@ chrome.runtime.onInstalled.addListener(syncActionBehaviour);
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.settings) {
-    applyActionBehaviour(changes.settings.newValue?.displayMode || "badge");
+    applyActionBehaviour(changes.settings.newValue || {});
   }
 });
 

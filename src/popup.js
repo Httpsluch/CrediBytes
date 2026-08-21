@@ -546,11 +546,6 @@ function translateStatic() {
   document.querySelectorAll("[data-i18n]").forEach(el => {
     el.textContent = I18N.t(el.dataset.i18n);
   });
-  const exp = document.getElementById("expand-btn");
-  if (exp) {
-    exp.title = I18N.t("ui.openSidePanel");
-    exp.setAttribute("aria-label", I18N.t("ui.openSidePanel"));
-  }
 }
 
 function applyLang(lang) {
@@ -608,6 +603,19 @@ document.querySelectorAll(".tab").forEach(tab => {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
+// One reading of the stored shape, old or new. Kept in a single place because
+// four call sites need it and a disagreement between them would silently put
+// the toggle and the page surface out of step.
+function normaliseSettings(s) {
+  const legacy = s.displayMode;
+  const sidePanel = typeof s.sidePanel === "boolean"
+    ? s.sidePanel
+    : legacy === "sidepanel";
+  const displayResult = s.displayResult ||
+    (legacy === "floating" ? "floating" : "badge");
+  return { sidePanel, displayResult };
+}
+
 function loadSettings() {
   chrome.storage.local.get("settings", (data) => {
     const s = data.settings || {};
@@ -618,8 +626,21 @@ function loadSettings() {
     // Same reconciliation as the theme: panel-init.js already applied the
     // localStorage mirror pre-paint, storage wins if they diverge.
     applyLang(s.lang || (I18N ? I18N.DEFAULT_LANG : "en"));
-    const mode = s.displayMode || "badge";
-    const radio = document.querySelector(`input[name="display-mode"][value="${mode}"]`);
+    // MIGRATION. displayMode used to be a single three-way value
+    // (badge | floating | sidepanel), which conflated two independent
+    // questions: where CrediBytes' own UI opens, and what appears on the page.
+    // "sidepanel" actually meant "badges PLUS the panel", so it was never a
+    // peer of the other two.
+    //
+    // Split into displayMode (panel on/off) and displayResult (badge|floating).
+    // An old "sidepanel" therefore becomes panel ON + badge, which is exactly
+    // what it did before. Reading it here rather than only at install means a
+    // user who never triggers onInstalled still lands somewhere valid.
+    const view = normaliseSettings(s);
+    const panel = document.getElementById("sidepanel-toggle");
+    if (panel) panel.checked = view.sidePanel;
+    const radio = document.querySelector(
+      `input[name="display-result"][value="${view.displayResult}"]`);
     if (radio) radio.checked = true;
   });
 }
@@ -638,52 +659,71 @@ document.getElementById("toggle-scanning").addEventListener("change", (e) => {
 const PANEL_PATH = "src/popup.html?panel=1";
 
 const MODE_LABELS = {
-  badge:     "Inline badges enabled — reload is not required.",
-  floating:  "Floating widget enabled — look for it on the page.",
-  sidepanel: "Side panel enabled — badges also stay on ads.",
+  badge:    "Inline badges enabled — reload is not required.",
+  floating: "Floating widget enabled — look for it on the page.",
 };
 
-function flashStatus(text) {
-  const el2 = document.getElementById("mode-status");
+function flashStatus(id, text) {
+  const el2 = document.getElementById(id);
   if (!el2) return;
   el2.textContent = text;
-  clearTimeout(flashStatus._t);
-  flashStatus._t = setTimeout(() => { el2.textContent = ""; }, 2600);
+  clearTimeout(flashStatus["_t_" + id]);
+  flashStatus["_t_" + id] = setTimeout(() => { el2.textContent = ""; }, 2600);
 }
 
-document.querySelectorAll("input[name='display-mode']").forEach(radio => {
+// ── Display Result: what appears on the Facebook page ────────────────────────
+document.querySelectorAll("input[name='display-result']").forEach(radio => {
   radio.addEventListener("change", () => {
     chrome.storage.local.get("settings", (data) => {
       const s = data.settings || {};
-      s.displayMode = radio.value;
-
+      s.displayResult = radio.value;
+      // The legacy key is cleared, not left behind: normaliseSettings() falls
+      // back to it, so a stale value would keep resurrecting the old choice.
+      delete s.displayMode;
       // content.js listens on storage.onChanged, so writing here is what
       // actually switches the on-page surface.
       chrome.storage.local.set({ settings: s }, () => {
-        flashStatus(MODE_LABELS[radio.value] || "Display mode updated.");
-      });
-
-      // Dismiss the popup after a choice: every mode's result is on the page or
-      // in the panel, so a 360px card left open just covers it. Guarded, because
-      // when this page IS the panel, closing would shut what was just chosen.
-      if (!runningAsSidePanel) {
-        setTimeout(() => window.close(), radio.value === "sidepanel" ? 250 : 900);
-      }
-
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const tab = tabs[0];
-        if (!tab) return;
-        if (radio.value === "sidepanel") {
-          // Re-enable first: switching away disables the panel for this tab, and
-          // open() on a disabled panel throws.
-          chrome.sidePanel.setOptions({ tabId: tab.id, path: PANEL_PATH, enabled: true }).catch(() => {});
-          // Must stay in the user-gesture call stack, so not nested in storage.
-          chrome.sidePanel.open({ tabId: tab.id });
-        } else {
-          chrome.sidePanel.setOptions({ tabId: tab.id, enabled: false }).catch(() => {});
-        }
+        flashStatus("mode-status", MODE_LABELS[radio.value] || "Display updated.");
       });
     });
+  });
+});
+
+// ── Display Mode: where CrediBytes itself opens ──────────────────────────────
+// The toolbar-click behaviour is applied by background.js, which watches this
+// setting. Opening/closing the panel here is the immediate feedback for the
+// flip itself.
+document.getElementById("sidepanel-toggle")?.addEventListener("change", (e) => {
+  const on = e.target.checked;
+  chrome.storage.local.get("settings", (data) => {
+    const s = data.settings || {};
+    s.sidePanel = on;
+    delete s.displayMode;
+    chrome.storage.local.set({ settings: s }, () => {
+      flashStatus("panel-status", on
+        ? "Side panel enabled — the toolbar icon now opens the panel."
+        : "Side panel disabled — the toolbar icon opens the popup again.");
+    });
+  });
+
+  // NOT nested inside the storage callback: sidePanel.open() must run inside
+  // the user-gesture call stack, and a storage callback is a later task.
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs[0];
+    if (!tab) return;
+    if (on) {
+      // Re-enable before opening: turning the toggle off disables the panel for
+      // the tab, and open() on a disabled panel throws.
+      chrome.sidePanel.setOptions({ tabId: tab.id, path: PANEL_PATH, enabled: true })
+        .catch(() => {});
+      chrome.sidePanel.open({ tabId: tab.id });
+      // The popup and the panel side by side are redundant. Guarded, because
+      // when this page IS the panel, closing would shut what was just chosen.
+      if (!runningAsSidePanel) setTimeout(() => window.close(), 250);
+    } else {
+      // Closes the panel outright, which is what "off" should mean.
+      chrome.sidePanel.setOptions({ tabId: tab.id, enabled: false }).catch(() => {});
+    }
   });
 });
 
@@ -700,15 +740,67 @@ function ensurePanelClassFallback() {
 ensurePanelClassFallback();
 window.addEventListener("resize", ensurePanelClassFallback);
 
+// The header's "->" button is gone. It duplicated the Side Panel toggle in
+// Settings, and two controls for one preference can disagree — the button
+// opened the panel without recording that the user wanted it, so the next
+// toolbar click went back to the popup.
 const runningAsSidePanel = document.documentElement.classList.contains("is-sidepanel");
-if (runningAsSidePanel) document.getElementById("expand-btn")?.remove();
 
-document.getElementById("expand-btn")?.addEventListener("click", () => {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (!tabs[0]) return;
-    chrome.sidePanel.setOptions({ tabId: tabs[0].id, path: PANEL_PATH, enabled: true }).catch(() => {});
-    chrome.sidePanel.open({ tabId: tabs[0].id });
-    window.close();   // popup and panel side by side would be redundant
+// ── Report a bug ──────────────────────────────────────────────────────────────
+//
+// Opens a Google Form in a new tab with the diagnostic fields already filled.
+// Replace BUG_FORM with the "Get pre-filled link" URL from the form, keeping
+// the entry.N ids below in step with it — nothing else needs to change.
+//
+// WHAT IS DEPARTS FROM THIS MACHINE, AND WHAT IS NOT
+// Version, browser, OS, the two display settings and a scan count. NOT the
+// current tab's URL and NOT any advertiser name: an Ad Library URL carries the
+// user's search terms and a feed URL identifies their session, so sending
+// either would put their browsing into a third-party form to debug a badge.
+// Nothing here identifies a person or a page they looked at.
+const BUG_FORM = {
+  url: "https://docs.google.com/forms/d/e/FORM_ID_HERE/viewform",
+  fields: {
+    version:  "entry.100000001",
+    browser:  "entry.100000002",
+    platform: "entry.100000003",
+    display:  "entry.100000004",
+    scans:    "entry.100000005",
+  },
+};
+
+function bugReportUrl(info) {
+  const u = new URL(BUG_FORM.url);
+  u.searchParams.set("usp", "pp_url");
+  for (const [k, entry] of Object.entries(BUG_FORM.fields)) {
+    if (info[k] != null && info[k] !== "") u.searchParams.set(entry, String(info[k]));
+  }
+  return u.toString();
+}
+
+document.getElementById("report-bug-btn")?.addEventListener("click", () => {
+  chrome.storage.local.get(["settings", "totals", "scans"], (data) => {
+    const s = data.settings || {};
+    const view = normaliseSettings(s);
+    let version = "";
+    try { version = chrome.runtime.getManifest().version; } catch (_e) {}
+    // The UA string names the browser and OS and nothing about the user.
+    const ua = navigator.userAgent || "";
+    const chromeVer = (/Chrome\/([\d.]+)/.exec(ua) || [, "unknown"])[1];
+    const info = {
+      version,
+      browser: `Chrome ${chromeVer}`,
+      platform: navigator.platform || "unknown",
+      display: `${view.sidePanel ? "side panel" : "popup"} / ${view.displayResult}` +
+               `${s.scanningEnabled === false ? " / scanning off" : ""}` +
+               ` / ${s.lang || "en"}`,
+      scans: String((data.scans || []).length),
+    };
+    if (BUG_FORM.url.includes("FORM_ID_HERE")) {
+      flashStatus("lang-status", "No bug form is configured yet.");
+      return;
+    }
+    chrome.tabs.create({ url: bugReportUrl(info) });
   });
 });
 

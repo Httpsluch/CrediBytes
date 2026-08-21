@@ -34,10 +34,26 @@ const snap = () => page.evaluate(() => ({
   processed: document.querySelectorAll("[credibytes-processed]").length,
 }));
 
+// displayResult is the new key. displayMode used to be one three-way value
+// (badge|floating|sidepanel) conflating what is drawn on the page with where
+// the extension's own UI opens; setLegacyMode() below proves the old value
+// still resolves for users who have not been migrated yet.
 const setMode = (mode) => page.evaluate((m) => new Promise(res => {
-  const s = { ...window.__store.settings, displayMode: m };
+  const s = { ...window.__store.settings, displayResult: m };
+  delete s.displayMode;
   window.chrome.storage.local.set({ settings: s }, () => setTimeout(res, 350));
 }), mode);
+
+const setLegacyMode = (mode) => page.evaluate((m) => new Promise(res => {
+  const s = { ...window.__store.settings, displayMode: m };
+  delete s.displayResult;
+  window.chrome.storage.local.set({ settings: s }, () => setTimeout(res, 350));
+}), mode);
+
+const setSidePanel = (on) => page.evaluate((v) => new Promise(res => {
+  const s = { ...window.__store.settings, sidePanel: v };
+  window.chrome.storage.local.set({ settings: s }, () => setTimeout(res, 350));
+}), on);
 
 const setScanning = (on) => page.evaluate((v) => new Promise(res => {
   const s = { ...window.__store.settings, scanningEnabled: v };
@@ -92,6 +108,84 @@ const expanded = await page.evaluate(() => {
 check("detail expands on click", expanded.hidden === false, JSON.stringify(expanded));
 check("detail sets aria-expanded=true", expanded.aria === "true", expanded.aria);
 check("detail renders rows", expanded.rows > 0, "rows=" + expanded.rows);
+
+// ── The settings split, and the widget's new behaviour ──────────────────────
+//
+// displayMode was one three-way value that forced a false choice: "sidepanel"
+// meant "badges PLUS the panel", so it was never a peer of "badge"/"floating".
+// It is now displayMode (panel on/off) + displayResult (badge|floating), and
+// the two are independent — every combination is reachable.
+{
+  // A stored legacy value must still resolve, or an un-migrated user gets a
+  // blank page instead of the surface they chose.
+  await setLegacyMode("floating");
+  let t = await snap();
+  check("legacy displayMode=floating still resolves", t.floating === true, JSON.stringify(t));
+  await setLegacyMode("sidepanel");
+  t = await snap();
+  check("legacy displayMode=sidepanel still means badges on the page",
+        t.badges === 1 && t.floating === false, JSON.stringify(t));
+
+  // The panel setting must not touch what is drawn on the page. That
+  // independence is the whole point of the split.
+  await setMode("floating");
+  await setSidePanel(true);
+  t = await snap();
+  check("side panel ON does not disturb the floating widget",
+        t.floating === true && t.badges === 0, JSON.stringify(t));
+  await setSidePanel(false);
+
+  // Uncapped list. It used to show 6 while the header counted every scan, so
+  // the number and the list openly disagreed.
+  const many = await page.evaluate(() => new Promise(res => {
+    const scans = Array.from({ length: 45 }, (_, i) => ({
+      ts: Date.now() - i * 1000, legitimacy: "unverified", status: "no_reference_match",
+      tier: "unverified", label: "Unverified", advertiserName: "Advertiser " + i,
+      company: "", sec: "", officialUrl: "", isStoreUrl: false,
+    }));
+    window.chrome.storage.local.set({ scans }, () => setTimeout(() => res(
+      document.querySelectorAll("#cb-float-content .cb-float-row").length), 400));
+  }));
+  check("widget draws a first batch well past the old cap of 6",
+        many > 6, "rows=" + many);
+
+  const detail = await page.evaluate(() => new Promise(res => {
+    const rows = document.querySelectorAll("#cb-float-content .cb-float-row");
+    rows[0].click();
+    setTimeout(() => {
+      const w = document.getElementById("cb-float-detail");
+      const first = w?.querySelector("#cb-float-detail-title")?.textContent || "";
+      rows[1].click();
+      setTimeout(() => {
+        const w2 = document.getElementById("cb-float-detail");
+        res({
+          opened: !!w,
+          first,
+          second: w2?.querySelector("#cb-float-detail-title")?.textContent || "",
+          windows: document.querySelectorAll("#cb-float-detail").length,
+          sections: w2?.querySelectorAll(".cb-section").length || 0,
+        });
+      }, 200);
+    }, 200);
+  }));
+
+  check("clicking a card opens the detail window", detail.opened === true, JSON.stringify(detail));
+  check("the detail window renders the card's sections",
+        detail.sections >= 3, "sections=" + detail.sections);
+  // The behaviour that keeps the page usable: one window, refilled.
+  check("clicking another card REPLACES it rather than stacking",
+        detail.windows === 1, "windows=" + detail.windows);
+  check("and the replacement shows the second card",
+        detail.second && detail.second !== detail.first,
+        `${detail.first} -> ${detail.second}`);
+
+  // The detail belongs to the list; it must not be left stranded on the page.
+  const afterClose = await page.evaluate(() => new Promise(res => {
+    document.getElementById("cb-float-close").click();
+    setTimeout(() => res(document.querySelectorAll("#cb-float-detail").length), 200);
+  }));
+  check("closing the list closes the detail window", afterClose === 0, "left=" + afterClose);
+}
 
 console.log("");
 let failed = 0;
