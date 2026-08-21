@@ -553,6 +553,8 @@ return globalThis;`);
       // The page repeats each block; a duplicate identifier must not double up.
       { $kind: "PrivacyType", identifier: "DATA_LINKED_TO_YOU",
         c: [cat("Contact Info", ["Email Address", "Phone Number"])] },
+      { $kind: "PrivacyType", identifier: "DATA_NOT_LINKED_TO_YOU",
+        c: [cat("Diagnostics", ["Crash Data"])] },
     ] } }]);
     const none = wrap([{ types: [
       { $kind: "PrivacyType", identifier: "DATA_NOT_COLLECTED", c: [] }] }]);
@@ -580,6 +582,15 @@ return globalThis;`);
   r.check("tracking is reported on its own",
           out.c.tracking.length === 1 && out.c.collected.every(e => e.category !== "Identifiers"),
           JSON.stringify(out.c.tracking));
+  // Live bug: merging Apple's linked and not-linked buckets printed
+  // "Identifiers - User ID, Device ID" twice on one card, and erased the
+  // distinction Apple's labels exist to make.
+  r.check("linked and not-linked stay in separate buckets",
+          out.c.collected.every(e => e.category !== "Diagnostics") &&
+          out.c.notLinked.map(e => e.category).join() === "Diagnostics",
+          JSON.stringify({ linked: out.c.collected, notLinked: out.c.notLinked }));
+  r.check("the store is tagged so the card can name it correctly",
+          out.c.store === "apple", String(out.c.store));
   // Apple publishes no encryption/deletion equivalent: not looked at, not absent.
   r.check("practices Apple does not publish are undefined, not false",
           out.c.encrypted === undefined && out.c.deletable === undefined,

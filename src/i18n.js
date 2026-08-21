@@ -301,7 +301,11 @@
       "ds.sensitive": "Includes {list}.",
       "ds.encrypted": "Encrypted in transit",
       "ds.deletable": "Deletion can be requested",
-      "ds.note": "The developer's own declaration to Google Play, shown as written. It is not a finding about this lender.",
+      "ds.linked": "Linked to your identity:",
+      "ds.notLinked": "Collected, but not linked to your identity:",
+      "ds.storePlay": "Google Play",
+      "ds.storeApple": "the App Store",
+      "ds.note": "The developer's own declaration to {store}, shown as written. It is not a finding about this lender.",
     },
 
     tl: {
@@ -574,7 +578,11 @@
       "ds.sensitive": "Kabilang ang {list}.",
       "ds.encrypted": "Naka-encrypt habang ipinapadala",
       "ds.deletable": "Puwedeng hilingin ang pagbura",
-      "ds.note": "Ito ang sariling deklarasyon ng developer sa Google Play, ipinapakita ayon sa pagkakasulat. Hindi ito natuklasang paglabag ng lender na ito.",
+      "ds.linked": "Nakaugnay sa pagkakakilanlan mo:",
+      "ds.notLinked": "Kinukuha, pero hindi nakaugnay sa pagkakakilanlan mo:",
+      "ds.storePlay": "Google Play",
+      "ds.storeApple": "App Store",
+      "ds.note": "Ito ang sariling deklarasyon ng developer sa {store}, ipinapakita ayon sa pagkakasulat. Hindi ito natuklasang paglabag ng lender na ito.",
     },
   };
 

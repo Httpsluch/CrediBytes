@@ -246,6 +246,7 @@ function parseDataSafety(html) {
     }
   }
   return {
+    store: "play",
     collected, shared, encrypted, deletable,
     sensitive: [...new Set(flags)],
   };
@@ -296,7 +297,7 @@ function parseAppleDataSafety(html) {
   })(data);
   if (!types.length) return null;
 
-  const collected = [], tracking = [];
+  const linked = [], notLinked = [], tracking = [];
   const seen = new Set();
   for (const pt of types) {
     if (seen.has(pt.identifier)) continue;      // the page repeats each block
@@ -311,19 +312,29 @@ function parseAppleDataSafety(html) {
       }
       for (const v of Object.values(o)) wc(v);
     })(pt);
+    // Apple's three buckets are kept apart, because the distinction IS the
+    // disclosure. Merging them printed "Identifiers - User ID, Device ID" twice
+    // on a live card (once from each bucket) and, worse, lost the difference
+    // between data tied to your identity and data that is not.
     if (pt.identifier === "DATA_USED_TO_TRACK_YOU") tracking.push(...cats);
-    else if (pt.identifier !== "DATA_NOT_COLLECTED") collected.push(...cats);
+    else if (pt.identifier === "DATA_LINKED_TO_YOU") linked.push(...cats);
+    else if (pt.identifier === "DATA_NOT_LINKED_TO_YOU") notLinked.push(...cats);
+    // DATA_NOT_COLLECTED contributes nothing by design: it is the developer
+    // declaring an empty set, which is a real observation, not a failed read.
   }
 
   const flags = [];
-  for (const e of collected.concat(tracking)) {
+  for (const e of linked.concat(notLinked, tracking)) {
     if (APPLE_SENSITIVE.test(e.category)) flags.push(e.category);
     else if (/^contact info$/i.test(e.category) && APPLE_PHONE.test(e.detail)) {
       flags.push("Phone number");
     }
   }
   return {
-    collected, shared: [], tracking,
+    store: "apple",
+    // `collected` stays the primary list so the renderer needs no special case;
+    // for Apple that means the data Apple says is LINKED to your identity.
+    collected: linked, notLinked, shared: [], tracking,
     // Apple publishes no equivalent of Play's encryption/deletion practices.
     // undefined, not false: we did not look, rather than looked and found none.
     encrypted: undefined, deletable: undefined,

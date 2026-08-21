@@ -308,10 +308,17 @@ function buildDataSafety(DS) {
   const line = (e) => el("li", "check-item",
     e.detail ? `${e.category} — ${e.detail}` : e.category);
   if (DS.collected.length) {
-    ul.appendChild(el("li", "check-sub", T("ds.collected")));
+    // Apple names its primary bucket "Data Linked to You"; Play just says
+    // collected. Using each store's own wording keeps this a quotation.
+    ul.appendChild(el("li", "check-sub",
+      T(DS.store === "apple" ? "ds.linked" : "ds.collected")));
     for (const e of DS.collected) ul.appendChild(line(e));
-  } else {
+  } else if (!(DS.notLinked && DS.notLinked.length)) {
     ul.appendChild(el("li", "check-item", T("ds.noneCollected")));
+  }
+  if (DS.notLinked && DS.notLinked.length) {
+    ul.appendChild(el("li", "check-sub", T("ds.notLinked")));
+    for (const e of DS.notLinked) ul.appendChild(line(e));
   }
   if (DS.shared.length) {
     ul.appendChild(el("li", "check-sub", T("ds.shared")));
@@ -331,7 +338,8 @@ function buildDataSafety(DS) {
   if (DS.deletable) sec.push(T("ds.deletable"));
   if (sec.length) box.appendChild(el("div", "detail-body", sec.join(" · ")));
 
-  box.appendChild(el("div", "contrib-note", T("ds.note")));
+  box.appendChild(el("div", "contrib-note",
+    T("ds.note", { store: T(DS.store === "apple" ? "ds.storeApple" : "ds.storePlay") })));
   return box;
 }
 
