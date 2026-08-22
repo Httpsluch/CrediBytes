@@ -811,20 +811,21 @@ const runningAsSidePanel = document.documentElement.classList.contains("is-sidep
 // Nothing here identifies a person or a page they looked at.
 const BUG_FORM = {
   url: "https://docs.google.com/forms/d/e/1FAIpQLSd5nXTTl8FlWkNJY7Oo8zequQVGrS3AmvPSq4vhjxmdafy9pw/viewform",
-  // Google Forms prefills through entry.N parameters, and those ids exist only
-  // in the form itself. Fill this in from the form's "Get pre-filled link"
-  // (⋮ menu → Get pre-filled link → fill the five diagnostic fields → Get link),
-  // mapping each name below to the entry.N it produces.
+  // Google Forms prefills through entry.N parameters. These ids came from the
+  // form's own "Get pre-filled link", generated with a distinct placeholder in
+  // each field (VERSION, BROWSER, OS, DISPLAY, SCANS) so every id could be
+  // matched to its question rather than guessed — five fields all filled with
+  // "test" would have produced five indistinguishable ids.
   //
-  // Until then the button still works: the diagnostics go to the clipboard and
-  // the reporter pastes them. A report with the version in it is the point; how
-  // it gets there is not.
+  // Regenerating the link is the only way to get these. If the form's questions
+  // are reordered the ids DO survive, but deleting and re-adding a question
+  // mints a new one, and a stale id silently prefills nothing.
   fields: {
-    // version:  "entry.0000000000",
-    // browser:  "entry.0000000000",
-    // platform: "entry.0000000000",
-    // display:  "entry.0000000000",
-    // scans:    "entry.0000000000",
+    version:  "entry.1535818462",
+    browser:  "entry.539395941",
+    platform: "entry.1754124485",
+    display:  "entry.270480088",
+    scans:    "entry.630677178",
   },
 };
 
@@ -855,12 +856,25 @@ document.getElementById("report-bug-btn")?.addEventListener("click", () => {
                ` / ${s.lang || "en"}`,
       scans: String((data.scans || []).length),
     };
-    if (BUG_FORM.url.includes("FORM_ID_HERE")) {
-      // Its own status line. This pointed at lang-status, an id that does not
-      // exist, so the one case that needs feedback — no form configured yet —
-      // failed silently and the button looked broken.
-      flashStatus("bug-status", T("ui.reportBugUnset"));
-      return;
+    // With entry ids configured the form arrives prefilled. Without them it
+    // still opens, and the diagnostics go to the clipboard so the reporter can
+    // paste them — a report that carries the version is the point, and dropping
+    // it silently because a constant was not filled in would be the worst of
+    // the three outcomes.
+    //
+    // Its own status line, not lang-status: that id does not exist, so the one
+    // case needing feedback used to fail silently and the button looked broken.
+    if (!Object.keys(BUG_FORM.fields).length) {
+      const text = [
+        `Extension: v${info.version}`,
+        `Browser: ${info.browser}`,
+        `OS: ${info.platform}`,
+        `Settings: ${info.display}`,
+        `Scans stored: ${info.scans}`,
+      ].join("\n");
+      // Best effort: a clipboard refusal must not stop the form opening.
+      try { navigator.clipboard?.writeText(text); } catch (_e) { /* ignore */ }
+      flashStatus("bug-status", T("ui.reportBugCopied"));
     }
     chrome.tabs.create({ url: bugReportUrl(info) });
   });
