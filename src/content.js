@@ -1328,10 +1328,14 @@
         user-select: none;
         animation: cb-pop .18s ease-out;
         /* Free resize in both directions, with a floor so it cannot be dragged
-           to nothing. CSS resize needs overflow != visible, which is also what
-           the scrolling body needs, so the two requirements agree.
-           No maximum: the user decides. */
-        resize: both; overflow: auto;
+           to nothing. No maximum: the user decides.
+
+           overflow is HIDDEN, not auto. CSS resize only needs overflow to be
+           something other than visible, and auto made the whole widget
+           scrollable — so scrolling the list carried the header off the top
+           with it. hidden keeps resize working while leaving the body as the
+           only scroll container, which is what pins the header. */
+        resize: both; overflow: hidden;
         min-width: 240px; min-height: 200px;
         display: flex; flex-direction: column;
       }
@@ -1383,7 +1387,9 @@
         z-index: 2147483001;
         font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
         animation: cb-pop .18s ease-out;
-        resize: both; overflow: auto;
+        /* hidden for the same reason as the list: the body scrolls, so the
+           verdict bar stays pinned instead of scrolling away. */
+        resize: both; overflow: hidden;
         min-width: 260px; min-height: 180px;
         display: flex; flex-direction: column;
       }

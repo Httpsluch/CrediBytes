@@ -195,6 +195,26 @@ check("detail renders rows", expanded.rows > 0, "rows=" + expanded.rows);
     setTimeout(() => res(document.querySelectorAll("#cb-float-detail").length), 200);
   }));
   check("closing the list closes the detail window", afterClose === 0, "left=" + afterClose);
+
+  // The header must stay put while the list scrolls. overflow:auto on the
+  // resizable container made the WHOLE widget scrollable, so scrolling the rows
+  // carried the header off the top. Only the body may be a scroll container.
+  const scrollShape = await page.evaluate(() => new Promise(res => {
+    window.chrome.storage.local.set({ settings: { displayResult: "floating", scanningEnabled: true } }, () => {
+      setTimeout(() => {
+        const w = document.getElementById("cb-floating");
+        const body = document.getElementById("cb-float-content");
+        const gs = (el) => el ? getComputedStyle(el).overflowY : null;
+        res({ outer: gs(w), inner: gs(body), resize: w ? getComputedStyle(w).resize : null });
+      }, 350);
+    });
+  }));
+  check("the widget itself does not scroll",
+        scrollShape.outer === "hidden", "outer overflowY=" + scrollShape.outer);
+  check("the body is the scroll container",
+        ["auto", "scroll"].includes(scrollShape.inner), "inner overflowY=" + scrollShape.inner);
+  // hidden still permits resize; only `visible` disables it.
+  check("and it is still resizable", scrollShape.resize === "both", "resize=" + scrollShape.resize);
 }
 
 console.log("");
