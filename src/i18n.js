@@ -54,7 +54,7 @@
       "verdict.namematch.label": "Name Match Only",
       "verdict.namematch.bar": "AD NAME MATCH ONLY",
       "verdict.danger.label": "Unregistered App",
-      "verdict.danger.bar": "AD UNREGISTERED",
+      "verdict.danger.bar": "AD FLAGGED",
       "verdict.unverified.label": "Unverified",
       "verdict.unverified.bar": "AD UNVERIFIED",
 
@@ -325,7 +325,7 @@
       "verdict.namematch.label": "Pangalan Lang ang Tugma",
       "verdict.namematch.bar": "PANGALAN LANG ANG TUGMA",
       "verdict.danger.label": "Hindi Rehistradong App",
-      "verdict.danger.bar": "HINDI REHISTRADO",
+      "verdict.danger.bar": "AD FLAGGED",
       "verdict.unverified.label": "Hindi Ma-verify",
       "verdict.unverified.bar": "HINDI MA-VERIFY",
 

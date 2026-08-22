@@ -65,7 +65,15 @@ const check = (name, cond, detail) => { results.push({ name, pass: !!cond, detai
 
 let s = await snap();
 check("badge mode: badge injected", s.badges === 1, JSON.stringify(s));
-check("badge mode: bar reads AD UNREGISTERED!", /UNREGISTERED/.test(s.badgeLabel || ""), s.badgeLabel);
+// The bar reads FLAGGED, matching the popup's third tile. It said
+// "UNREGISTERED" while the tile said "Flagged", so one verdict had two names
+// depending on which surface the user was looking at.
+check("badge mode: bar reads AD FLAGGED", /FLAGGED/.test(s.badgeLabel || ""), s.badgeLabel);
+// The stored label stays "Unregistered App" — the bar is a headline, the label
+// is the record, and only the record distinguishes "never authorised" from the
+// revoked state that also shows red.
+check("badge mode: the stored label stays specific",
+      s.saved?.label === "Unregistered App", s.saved?.label);
 check("badge mode: stored label stays canonical", s.saved?.label === "Unregistered App", s.saved?.label);
 check("badge mode: no floating widget", s.floating === false, "");
 check("badge mode: scan saved", s.scans === 1, "scans=" + s.scans);

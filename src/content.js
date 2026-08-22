@@ -1088,6 +1088,10 @@
   // the same module the badge and the popup card use, so all three cannot
   // disagree about a verdict. That module exists precisely because verdictOf()
   // and the SAVE_SCAN payload were each duplicated once and drifted.
+  // Mirrors VERDICT_MARK in popup.js. Kept beside the window it draws so the
+  // two surfaces are obviously meant to match.
+  const DETAIL_MARK = { verified: "✓", unverified: "?", flagged: "!" };
+
   function openFloatDetail(scan) {
     const list = document.getElementById("cb-floating");
     let win = document.getElementById("cb-float-detail");
@@ -1157,7 +1161,12 @@
     const head = win.querySelector("#cb-float-detail-header");
     head.className = "";                       // drop the previous cb-* verdict
     head.classList.add(v.cls);
-    win.querySelector("#cb-float-detail-icon").textContent = v.icon;
+    // Three-state mark, not the six-state badge icon: verified/unverified/
+    // flagged is what the popup tiles and the verdict card already use, and a
+    // one-character mark reads better in a bar than an emoji.
+    const state = window.CrediBytesVerdictView.present(scan, settings.lang).state;
+    win.querySelector("#cb-float-detail-icon").textContent =
+      DETAIL_MARK[state] || v.icon;
     const titleEl = win.querySelector("#cb-float-detail-title");
     titleEl.textContent = v.bar || v.label;
     // The advertiser is the first thing in the body instead, where a long name
@@ -1776,7 +1785,12 @@
       injectFloatingStyles();
       ensureFloatingWidget();
       const w = document.getElementById("cb-floating");
-      if (w) w.style.display = "block";
+      // removeProperty, NOT display:block. The stylesheet lays this out as a
+      // flex column so the header stays pinned and the body scrolls; an inline
+      // display:block overrode that, the body lost flex:1, and it grew past the
+      // widget to be clipped by overflow:hidden — content cut off with no
+      // scrollbar until the page was reloaded.
+      if (w) w.style.removeProperty("display");
     } else {
       removeFloatingWidget();
     }
@@ -1816,7 +1830,7 @@
         ensureFloatingWidget();
         if (data.floatingOpen !== false) {
           const w = document.getElementById("cb-floating");
-          if (w) w.style.display = "block";
+          if (w) w.style.removeProperty("display");
         }
       }
 
