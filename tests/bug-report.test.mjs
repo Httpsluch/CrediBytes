@@ -65,4 +65,65 @@ r.check("no tab URL or advertiser is collected",
         !/tabs\.query[\s\S]{0,400}bugReportUrl/.test(popupJs) &&
         !/info\.(url|advertiser)/.test(popupJs), "diagnostics include browsing data");
 
+// ── Browser detection ──────────────────────────────────────────────────────
+//
+// Brave sends a userAgent identical to Chrome's on purpose, so a Brave user
+// reporting a bug was labelled "Chrome 151.0.0.0". Client Hints carries the
+// real brand list; Brave additionally hides itself from THAT, and exposes
+// navigator.brave.isBrave() instead.
+{
+  const { chromium } = await import("./_setup.mjs");
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+  await page.goto("about:blank");
+  await page.addScriptTag({ content: popupJs.slice(
+    popupJs.indexOf("async function detectBrowser"),
+    popupJs.indexOf("function bugReportUrl")) });
+
+  const out = await page.evaluate(async () => {
+    const results = {};
+    // Brave: isBrave() resolves true, and the brand list does NOT say Brave.
+    navigator.brave = { isBrave: async () => true };
+    results.brave = await detectBrowser();
+    delete navigator.brave;
+
+    // Edge: the brand list carries the GREASE entry plus Chromium plus Edge.
+    Object.defineProperty(navigator, "userAgentData", {
+      configurable: true,
+      value: { brands: [
+        { brand: "Not(A:Brand)", version: "8" },
+        { brand: "Chromium", version: "151" },
+        { brand: "Microsoft Edge", version: "151" },
+      ], platform: "Windows" },
+    });
+    results.edge = await detectBrowser();
+    results.platform = detectPlatform();
+
+    // Plain Chrome: only the GREASE entry and Chromium.
+    Object.defineProperty(navigator, "userAgentData", {
+      configurable: true,
+      value: { brands: [
+        { brand: "Not?A_Brand", version: "24" },
+        { brand: "Google Chrome", version: "151" },
+      ], platform: "Windows" },
+    });
+    results.chrome = await detectBrowser();
+    return results;
+  });
+  await browser.close();
+
+  r.check("Brave is identified despite masking as Chrome",
+          /^Brave/.test(out.brave), out.brave);
+  r.check("Edge is named, not reported as Chromium",
+          /Microsoft Edge/.test(out.edge), out.edge);
+  r.check("the GREASE placeholder brand is discarded",
+          !/not.?a.?brand/i.test(out.edge + out.chrome), `${out.edge} | ${out.chrome}`);
+  r.check("plain Chrome still reports Chrome",
+          /Chrome/.test(out.chrome), out.chrome);
+  // navigator.platform says "Win32" even on 64-bit Windows, which is misleading
+  // rather than merely vague.
+  r.check("the platform comes from Client Hints, not the Win32 legacy value",
+          out.platform === "Windows", out.platform);
+}
+
 process.exit(r.finish() ? 1 : 0);

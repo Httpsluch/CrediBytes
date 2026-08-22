@@ -829,6 +829,46 @@ const BUG_FORM = {
   },
 };
 
+// Brave, Edge, Opera and Vivaldi all send a userAgent string identical to
+// Chrome's — Brave does it deliberately, to resist fingerprinting. So parsing
+// navigator.userAgent cannot tell them apart, and a Brave user reporting a bug
+// was labelled "Chrome 151.0.0.0".
+//
+// User-Agent Client Hints carries the real brand list. Brave additionally
+// exposes navigator.brave.isBrave(), because it hides itself from the brand
+// list too.
+//
+// Both are async, and both are absent in older browsers, so every path falls
+// back to the userAgent string rather than reporting nothing.
+async function detectBrowser() {
+  const ua = navigator.userAgent || "";
+  const uaVer = (/Chrome\/([\d.]+)/.exec(ua) || [, ""])[1];
+
+  try {
+    if (navigator.brave && await navigator.brave.isBrave()) {
+      return `Brave (Chromium ${uaVer || "unknown"})`;
+    }
+  } catch (_e) { /* not Brave, or the check is unavailable */ }
+
+  const brands = navigator.userAgentData?.brands;
+  if (Array.isArray(brands) && brands.length) {
+    // Chromium pads this list with a deliberately meaningless entry — the
+    // "GREASE" brand — to stop anyone assuming a fixed shape. Drop it.
+    const real = brands.filter(b => !/not.?a.?brand/i.test(b.brand || ""));
+    // Prefer whatever is NOT plain Chromium/Chrome: on Edge the list reads
+    // [Chromium, Microsoft Edge], and the second entry is the useful one.
+    const pick = real.find(b => !/^(chromium|google chrome)$/i.test(b.brand)) || real[0];
+    if (pick) return `${pick.brand} ${pick.version}`;
+  }
+  return uaVer ? `Chrome ${uaVer}` : (ua.slice(0, 60) || "unknown");
+}
+
+// navigator.platform is deprecated and reports "Win32" even on 64-bit Windows,
+// which is misleading rather than merely vague. Client Hints gives "Windows".
+function detectPlatform() {
+  return navigator.userAgentData?.platform || navigator.platform || "unknown";
+}
+
 function bugReportUrl(info) {
   const u = new URL(BUG_FORM.url);
   u.searchParams.set("usp", "pp_url");
@@ -839,18 +879,16 @@ function bugReportUrl(info) {
 }
 
 document.getElementById("report-bug-btn")?.addEventListener("click", () => {
-  chrome.storage.local.get(["settings", "totals", "scans"], (data) => {
+  chrome.storage.local.get(["settings", "totals", "scans"], async (data) => {
     const s = data.settings || {};
     const view = normaliseSettings(s);
     let version = "";
     try { version = chrome.runtime.getManifest().version; } catch (_e) {}
-    // The UA string names the browser and OS and nothing about the user.
-    const ua = navigator.userAgent || "";
-    const chromeVer = (/Chrome\/([\d.]+)/.exec(ua) || [, "unknown"])[1];
+    // Names the browser and OS, and nothing about the user.
     const info = {
       version,
-      browser: `Chrome ${chromeVer}`,
-      platform: navigator.platform || "unknown",
+      browser: await detectBrowser(),
+      platform: detectPlatform(),
       display: `${view.sidePanel ? "side panel" : "popup"} / ${view.displayResult}` +
                `${s.scanningEnabled === false ? " / scanning off" : ""}` +
                ` / ${s.lang || "en"}`,
