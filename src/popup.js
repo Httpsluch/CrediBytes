@@ -810,13 +810,21 @@ const runningAsSidePanel = document.documentElement.classList.contains("is-sidep
 // either would put their browsing into a third-party form to debug a badge.
 // Nothing here identifies a person or a page they looked at.
 const BUG_FORM = {
-  url: "https://docs.google.com/forms/d/e/FORM_ID_HERE/viewform",
+  url: "https://docs.google.com/forms/d/e/1FAIpQLSd5nXTTl8FlWkNJY7Oo8zequQVGrS3AmvPSq4vhjxmdafy9pw/viewform",
+  // Google Forms prefills through entry.N parameters, and those ids exist only
+  // in the form itself. Fill this in from the form's "Get pre-filled link"
+  // (⋮ menu → Get pre-filled link → fill the five diagnostic fields → Get link),
+  // mapping each name below to the entry.N it produces.
+  //
+  // Until then the button still works: the diagnostics go to the clipboard and
+  // the reporter pastes them. A report with the version in it is the point; how
+  // it gets there is not.
   fields: {
-    version:  "entry.100000001",
-    browser:  "entry.100000002",
-    platform: "entry.100000003",
-    display:  "entry.100000004",
-    scans:    "entry.100000005",
+    // version:  "entry.0000000000",
+    // browser:  "entry.0000000000",
+    // platform: "entry.0000000000",
+    // display:  "entry.0000000000",
+    // scans:    "entry.0000000000",
   },
 };
 
