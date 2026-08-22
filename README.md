@@ -339,7 +339,7 @@ scores every input against the wrong columns without raising an error.
 ### Regenerating artefacts
 
 ```bash
-# Models — from CrediBytes-Backend/
+# Models — from the CrediBytes-Backend repository, cloned as a sibling directory
 python tools/export_model_js.py        # → ../CrediBytes/src/stage1_model.js
 python tools/verify_export.py          # asserts JS output == predict_proba
 python tools/verify_export_stage3.py   # expect max|diff| ~1e-07 over 130 rows
@@ -375,7 +375,5 @@ warmed by a rate-limited request when a Facebook tab loads.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — design invariants and platform
   constraints in full, with the incidents behind each
 - [`tests/README.md`](tests/README.md) — what each suite locks in
-- [`../CrediBytes-Backend`](../CrediBytes-Backend) — FastAPI service and model
-  export tooling
-- `../CLAUDE.md` — cumulative technical reference: rejected approaches,
-  measurements, and the reasoning behind each decision
+- [CrediBytes-Backend](https://github.com/Httpsluch/CrediBytes-Backend) — the companion FastAPI service and the model
+  export tooling, in a separate repository

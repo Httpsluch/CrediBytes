@@ -183,7 +183,7 @@ is selected at display time.
 ### Regenerating artefacts
 
 ```bash
-# Models — from CrediBytes-Backend/
+# Models — from the CrediBytes-Backend repository, cloned as a sibling directory
 python tools/export_model_js.py        # → ../CrediBytes/src/stage1_model.js
 python tools/verify_export.py          # asserts JS output == predict_proba
 python tools/verify_export_stage3.py   # expect max|diff| ~1e-07 over 130 rows
@@ -247,11 +247,3 @@ Check the file parses before investigating the failures:
 ```bash
 node -e "new Function(require('fs').readFileSync('src/popup.js','utf8'))"
 ```
-
----
-
-## Further reading
-
-`../CLAUDE.md` is the cumulative technical reference: rejected approaches,
-measurements, and the reasoning behind each decision. Where something in this
-codebase appears arbitrary, the justification is recorded there.
