@@ -5,19 +5,19 @@
 ![Models](https://img.shields.io/badge/LightGBM-2%20models%20bundled-76b729)
 ![Status](https://img.shields.io/badge/version-1.0.0-blue)
 
-A Chrome extension that detects Online Lending Application (OLA) advertisements
-on Facebook and checks each one against the SEC Philippines registry — in the
-page, as the user scrolls.
+A Chrome extension that detects Online Lending Platform (OLP) advertisements
+on Facebook and checks each one against the SEC Philippines list of recorded
+platforms — in the page, as the user scrolls.
 
 Built for the undergraduate thesis *"A Machine Learning Advertisement Analysis
-System for Detecting Legitimacy of Philippine OLAs on Facebook."*
+System for Verifying Philippine Online Lending Platforms (OLPs) on Facebook."*
 
 **The core idea.** Illegitimate lending apps advertise using the names of
 registered ones. A name can be typed by anyone, so CrediBytes verifies the
 **destination** instead: an advertisement is legitimate only if its link resolves
 to a channel the lender actually declared to the SEC — an exact Play package ID,
 an Apple app ID, or a registered domain. Everything else is reported as
-unconfirmed rather than condemned.
+**unverified** rather than condemned.
 
 **Research findings it carries.** Across 2,164 collected ad appearances, **22.7%
 resolved to SEC-declared channels** and 73.7% could not be verified, surfacing
@@ -30,13 +30,22 @@ over 30 splits, vs a 0.562 baseline).
 
 ## Quick start
 
-### Load the extension
+### Install it as a tester
+
+Download the packaged build from
+[**Releases**](https://github.com/Httpsluch/CrediBytes/releases/latest) and follow
+the illustrated install guide linked from the release notes. It is written for
+people with no technical background and takes about five minutes.
+
+### Install it from a clone
 
 1. Open `chrome://extensions`
 2. Enable **Developer mode** (top right)
 3. Click **Load unpacked** and select this `CrediBytes/` folder
 
-Icons and models are committed, so there is no build step.
+Icons and models are committed, so there is no build step. Leave the folder where
+it is — Chrome re-reads the extension from that path on every launch, so moving
+or deleting it uninstalls the extension in effect.
 
 ### Try it
 
@@ -199,7 +208,8 @@ CrediBytes/
 │   ├── i18n.js          37 KB  219 keys × en/tl. Verdict text is {key, params},
 │   │                           resolved at display time so stored scans re-translate.
 │   ├── verdict-view.js   6 KB  Shared verdict renderer — badge, popup card, widget
-│   ├── sec_reference.js 51 KB  GENERATED — 187 SEC registrants, 128 with a website
+│   ├── sec_reference.js 51 KB  GENERATED — 187 SEC registrants: 128 with a website,
+│   │                           53 name-only, 3 carrying a confirmed revocation
 │   ├── revoked_reference.js   GENERATED — 1,375 revoked/suspended entries (124 KB)
 │   ├── stage1_model.js  13 KB  GENERATED — 100 trees, 7 features
 │   ├── stage3_model.js  17 KB  GENERATED — 120 trees, 15 features
