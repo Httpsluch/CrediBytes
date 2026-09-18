@@ -921,7 +921,7 @@ document.getElementById("report-bug-btn")?.addEventListener("click", () => {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 try {
-  const v = chrome.runtime.getManifest().version;
+  const v = chrome.runtime.getManifest().version_name;
   document.getElementById("app-version").textContent = `CrediBytes v${v}`;
 } catch (_e) { /* leave the static text */ }
 
