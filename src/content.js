@@ -1090,7 +1090,10 @@
   // and the SAVE_SCAN payload were each duplicated once and drifted.
   // Mirrors VERDICT_MARK in popup.js. Kept beside the window it draws so the
   // two surfaces are obviously meant to match.
-  const DETAIL_MARK = { verified: "✓", unverified: "?", flagged: "!" };
+  const DETAIL_MARK = {
+    legitimate: "✓", likely: "?", namematch: "≈",
+    danger: "!", unverified: "⚠", revoked: "⊘",
+  };
 
   function openFloatDetail(scan) {
     const list = document.getElementById("cb-floating");
@@ -1161,12 +1164,9 @@
     const head = win.querySelector("#cb-float-detail-header");
     head.className = "";                       // drop the previous cb-* verdict
     head.classList.add(v.cls);
-    // Three-state mark, not the six-state badge icon: verified/unverified/
-    // flagged is what the popup tiles and the verdict card already use, and a
-    // one-character mark reads better in a bar than an emoji.
-    const state = window.CrediBytesVerdictView.present(scan, settings.lang).state;
+    const detail = window.CrediBytesVerdictView.present(scan, settings.lang);
     win.querySelector("#cb-float-detail-icon").textContent =
-      DETAIL_MARK[state] || v.icon;
+      DETAIL_MARK[detail.tier] || v.icon;
     const titleEl = win.querySelector("#cb-float-detail-title");
     titleEl.textContent = v.bar || v.label;
     // The advertiser is the first thing in the body instead, where a long name

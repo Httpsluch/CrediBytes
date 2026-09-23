@@ -214,6 +214,7 @@ const browser = await chromium.launch({ headless: true });
     gauge: !!document.querySelector(".gauge"),
     verdictWord: document.querySelector(".verdict-word")?.textContent || "",
     expanded: document.querySelector(".scan-item")?.getAttribute("aria-expanded"),
+    advice: document.querySelector(".scan-advice")?.textContent || "",
   }));
   r.check("card rendered", before.cards === 1, JSON.stringify(before));
   // The gauge was removed with the card redesign — a percentage beside a
@@ -224,6 +225,9 @@ const browser = await chromium.launch({ headless: true });
           JSON.stringify(before));
   r.check("analysis is collapsed initially", before.detail === false, "");
   r.check("collapsed state announced", before.expanded === "false", String(before.expanded));
+  r.check("collapsed card shows concise action",
+          before.advice === "Verify the platform before sharing information.",
+          before.advice);
 
   await page.click(".scan-item");
   const after = await page.evaluate(() => {
@@ -235,10 +239,13 @@ const browser = await chromium.launch({ headless: true });
       checkItems: document.querySelectorAll(".check-item").length,
       contribRows: document.querySelectorAll(".contrib-row").length,
       expanded: document.querySelector(".scan-item")?.getAttribute("aria-expanded"),
+      adviceDisplay: getComputedStyle(document.querySelector(".scan-advice")).display,
     };
   });
   r.check("clicking a card opens the analysis", after.detail === true, "");
   r.check("expanded state announced", after.expanded === "true", String(after.expanded));
+  r.check("expanded card hides concise action",
+          after.adviceDisplay === "none", after.adviceDisplay);
   // The free-form trail became three fixed rows: where the link goes, whether
   // the app is declared, whether the name matches. Constant shape, so a
   // non-expert learns it once.
@@ -263,8 +270,12 @@ const browser = await chromium.launch({ headless: true });
           /RECOMMENDED ACTION/.test(after.text), after.text.slice(0, 140));
 
   await page.click(".scan-item");
-  const closed = await page.evaluate(() => !!document.querySelector(".scan-detail"));
-  r.check("clicking again collapses it", closed === false, "");
+  const closed = await page.evaluate(() => ({
+    detail: !!document.querySelector(".scan-detail"),
+    adviceDisplay: getComputedStyle(document.querySelector(".scan-advice")).display,
+  }));
+  r.check("clicking again collapses it", closed.detail === false, "");
+  r.check("collapsed action returns", closed.adviceDisplay !== "none", closed.adviceDisplay);
 
   await page.close();
 }

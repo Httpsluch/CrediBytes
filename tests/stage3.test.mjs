@@ -252,15 +252,18 @@ return globalThis;`);
   const out = await page.evaluate(async ([bgSrc, modelSrc, libSrc]) => {
     // Run background.js in a worker-shaped scope and capture what the
     // CHECK_LISTING handler passes to sendResponse.
-    let handler = null, clicked = null;
+    let handler = null, clicked = null, requested = [];
     const g = {
       Map, Set, JSON, Date, Math, Promise, console, URL, RegExp,
       encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout, isNaN,
-      fetch: async () => ({ ok: true, json: async () => ({ results: [{
+      fetch: async (url) => {
+        requested.push(String(url));
+        return { ok: true, json: async () => ({ results: [{
         trackName: "Peso Cash Loan", sellerName: "MAKATI LOAN, INC",
         averageUserRating: 4.6, userRatingCount: 9000,
         currentVersionReleaseDate: new Date(Date.now() - 20 * 86400000).toISOString(),
-        contentAdvisoryRating: "4+" }] }) }),
+        contentAdvisoryRating: "4+" }] }) };
+      },
       chrome: {
         runtime: { onInstalled: { addListener() {} }, onStartup: { addListener() {} },
                    onMessage: { addListener(fn) { handler = fn; } }, lastError: null },
@@ -301,10 +304,10 @@ return globalThis;`);
     // effect used to open nothing at all, because no onClicked listener existed.
     const hasClickFallback = typeof clicked === "function";
     const res = await new Promise(resolve => {
-      handler({ type: "CHECK_LISTING", url: "https://apps.apple.com/ph/app/x/id123",
+      handler({ type: "CHECK_LISTING", url: "https://itunes.apple.com/WebObjects/MZStore.woa/wa/redirectToContent?id=123",
                 advertiserName: "Makati Loan Inc" }, {}, resolve);
     });
-    return { res, hasClickFallback };
+    return { res, hasClickFallback, requested };
   }, [await read("background.js"), await read("stage3_model.js"), await read("stage3.js")]);
 
   const L = out.res && out.res.listing;
@@ -317,6 +320,9 @@ return globalThis;`);
           !!L && L.listing === undefined, JSON.stringify(L).slice(0, 90));
   r.check("developer reaches the popup", !!L && L.developer === "MAKATI LOAN, INC",
           String(L && L.developer));
+  r.check("Apple redirect URLs with query IDs use the Apple lookup",
+          out.requested.some(url => /itunes\.apple\.com\/lookup\?id=123/.test(url)),
+          out.requested.join(" | "));
   // Installs, rating count and star rating are three separate fields; the unit
   // word lives in the i18n template, not in the value. Combining them hid Play's
   // rating count behind its install count, so the row read "3,199,675 installs"

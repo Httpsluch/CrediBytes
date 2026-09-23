@@ -51,6 +51,10 @@
     legitimate: "action.verified", likely: "action.possible", namematch: "action.possible",
     unverified: "action.notFound", danger: "action.flagged",  revoked: "action.revoked",
   };
+  const SHORT_ACTION = {
+    legitimate: "action.short.verified", likely: "action.short.possible", namematch: "action.short.possible",
+    unverified: "action.short.notFound", danger: "action.short.flagged", revoked: "action.short.revoked",
+  };
 
   /** Mirrors verdictOf()/tierOf(); records saved before `tier` existed lack it. */
   function tierOf(scan) {
@@ -100,6 +104,7 @@
       company,
       means: T(MEANS[tier], null, lang),
       action: T(ACTION[tier], null, lang),
+      shortAction: T(SHORT_ACTION[tier], null, lang),
       checks: checks(scan, lang),
     };
   }

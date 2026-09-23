@@ -55,7 +55,10 @@ const FILTER_TIERS = {
 // RENDER_LIMIT existed because drawing every stored row at once stutters during
 // active scanning; batching solves that without hiding anything.
 // Drawn in the round/triangle badge on the right of each card.
-const VERDICT_MARK = { verified: "✓", unverified: "?", flagged: "!" };
+const VERDICT_MARK = {
+  legitimate: "✓", likely: "?", namematch: "≈",
+  danger: "!", unverified: "⚠", revoked: "⊘",
+};
 
 const BATCH = 40;
 
@@ -226,7 +229,7 @@ function buildDetail(scan) {
         (res) => {
           btn.remove();
           wrap.appendChild(res && res.ok ? buildListing(res.listing)
-                                         : el("div", "listing-fail", T("btn.failed")));
+                                         : el("div", "listing-fail", T("btn.failed." + ((res && res.error) || "generic"))));
         });
 
       // Store access is an OPTIONAL permission, requested here rather than held
@@ -242,7 +245,7 @@ function buildDetail(scan) {
         chrome.permissions.request({ origins }, (granted) => {
           if (granted) return go();
           btn.remove();
-          wrap.appendChild(el("div", "listing-fail", T("btn.failed")));
+          wrap.appendChild(el("div", "listing-fail", T("btn.failed.permission")));
         });
       } else {
         go();
@@ -375,7 +378,7 @@ function buildCard(scan) {
   main.appendChild(co);
 
   // The one-line instruction, which is what the short card exists to deliver.
-  main.appendChild(el("div", "scan-advice", view.action));
+  main.appendChild(el("div", "scan-advice", view.shortAction));
 
   // data-ts lets the ticker below refresh the text in place. Re-rendering the
   // whole feed once a minute would tear down every expanded card the user had
@@ -394,7 +397,7 @@ function buildCard(scan) {
   // The glyph is a child so the flagged triangle can colour it independently —
   // clip-path fills the shape, so the mark has to invert against it.
   const icon = el("div", "verdict-icon " + view.cls);
-  icon.appendChild(el("span", "verdict-glyph", VERDICT_MARK[view.state]));
+  icon.appendChild(el("span", "verdict-glyph", VERDICT_MARK[view.tier]));
   side.appendChild(icon);
   side.appendChild(el("span", "verdict-word " + view.cls, view.stateLabel));
   head.appendChild(side);
@@ -402,9 +405,16 @@ function buildCard(scan) {
 
   let open = null;
   const toggle = () => {
-    if (open) { open.remove(); open = null; item.setAttribute("aria-expanded", "false"); return; }
+    if (open) {
+      open.remove();
+      open = null;
+      item.classList.remove("is-expanded");
+      item.setAttribute("aria-expanded", "false");
+      return;
+    }
     open = buildDetail(scan);
     item.appendChild(open);
+    item.classList.add("is-expanded");
     item.setAttribute("aria-expanded", "true");
   };
   item.addEventListener("click", (e) => {

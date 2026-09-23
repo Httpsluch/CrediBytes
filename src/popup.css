@@ -423,6 +423,7 @@ html.is-sidepanel, html.is-sidepanel body {
   font-size: 11.5px; font-style: italic; color: var(--text-2);
   margin-top: 5px; line-height: 1.45;
 }
+.scan-item.is-expanded .scan-advice { display: none; }
 
 .scan-side { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .verdict-icon {

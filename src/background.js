@@ -258,8 +258,17 @@ const listingCache = new Map();      // storeKey -> { listing, pct }, FIFO
 const LISTING_CACHE_MAX = 120;
 
 function storeKeyOf(url) {
-  const m = /[?&]id=([^&]+)/.exec(url) || /\/(id\d+)/.exec(url);
-  return m ? m[1] : "";
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const queryId = parsed.searchParams.get("id");
+    if ((host === "apps.apple.com" || host === "itunes.apple.com") &&
+        queryId && /^\d+$/.test(queryId)) return "id" + queryId;
+    const pathId = parsed.pathname.match(/\/(id\d+)/i);
+    if (pathId) return pathId[1].toLowerCase();
+    if (host === "play.google.com" && queryId) return queryId;
+  } catch (_e) {}
+  return "";
 }
 
 async function readListing(url, advertiserName) {
@@ -343,7 +352,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // The advertiser name feeds dev_matches_advertiser, one of the 15 features.
     readListing(message.url, message.advertiserName)
       .then(listing => sendResponse({ ok: true, listing }))
-      .catch(() => sendResponse({ ok: false, listing: null }));
+      .catch((err) => sendResponse({
+        ok: false,
+        listing: null,
+        error: listingErrorCode(err),
+      }));
     return true;
   }
 
@@ -373,6 +386,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+function listingErrorCode(err) {
+  const message = String(err && err.message || "");
+  if (/play 403|apple 403/i.test(message)) return "blocked";
+  if (/not in the PH storefront|no listing data|listing unreadable|not a store url/i.test(message)) {
+    return "unavailable";
+  }
+  return "generic";
+}
 
 // The backend is the preferred source for Stage 1 so the deployed service
 // receives real traffic (and its logs show it). content.js waits only

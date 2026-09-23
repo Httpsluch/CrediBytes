@@ -55,9 +55,12 @@
 
   function appleAppId(url) {
     try {
-      const h = normHost(url);
+      const parsed = new URL(url);
+      const h = parsed.hostname.toLowerCase().replace(/^www\./, "");
       if (h !== "apps.apple.com" && h !== "itunes.apple.com") return "";
-      for (const p of new URL(url).pathname.split("/").filter(Boolean)) {
+      const queryId = parsed.searchParams.get("id");
+      if (queryId && /^\d+$/.test(queryId)) return "id" + queryId;
+      for (const p of parsed.pathname.split("/").filter(Boolean)) {
         if (p.startsWith("id") && /^\d+$/.test(p.slice(2))) return p.toLowerCase();
       }
       return "";
