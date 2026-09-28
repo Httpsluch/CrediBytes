@@ -916,6 +916,10 @@
   // row), where adEl.querySelector would not find it again.
   const adBadges = new WeakMap();
 
+  // How far the card must move up before an open Ad Library panel closes —
+  // enough to ignore a trackpad's bounce, well short of reaching the filter bar.
+  const SCROLL_CLOSE_PX = 24;
+
   // ── Badge injection (createElement — no innerHTML) ───────────────────────────
 
   function injectBadge(adEl, matchResult, stage1Result, advertiserName) {
@@ -1092,6 +1096,32 @@
     // The model still runs and its output is still stored on the scan; it is
     // simply no longer shown as though it decided anything.
 
+    // Ad Library only: an open panel closes once the page scrolls the card UP,
+    // toward the sticky filter bar it would otherwise be drawn over (it has to
+    // stack above the ad it floats on, so it cannot also stay below the bar).
+    // Scrolling up moves the card away from the bar and leaves it open.
+    //
+    // Measured on the badge itself rather than on window.scrollY, so it holds
+    // whichever element Facebook scrolls. Scrolling the panel's own text is
+    // reading, not leaving: those events are ignored, and the panel's
+    // overscroll-behavior stops a scroll that reaches its end from carrying on
+    // into the page.
+    let closeOnScroll = null;
+    const watchScroll = (on) => {
+      if (closeOnScroll) {
+        document.removeEventListener("scroll", closeOnScroll, true);
+        closeOnScroll = null;
+      }
+      if (!on || !isAdLibrary()) return;
+      const openedAt = badge.getBoundingClientRect().top;
+      closeOnScroll = (e) => {
+        if (e.target instanceof Node && detail.contains(e.target)) return;
+        if (!badge.isConnected) { watchScroll(false); return; }
+        if (openedAt - badge.getBoundingClientRect().top >= SCROLL_CLOSE_PX) setExpanded(false);
+      };
+      document.addEventListener("scroll", closeOnScroll, { capture: true, passive: true });
+    };
+
     const setExpanded = (open) => {
       detail.hidden = !open;
       // Lifts the badge above the ad only while the panel is open — see the
@@ -1100,6 +1130,7 @@
       toggle.setAttribute("aria-expanded", String(open));
       toggle.textContent = T(open ? "badge.hide" : "badge.details");
       toggle.title = T(open ? "badge.hideDetails" : "badge.showDetails");
+      watchScroll(open);
     };
 
     toggle.addEventListener("click", (e) => {
@@ -1829,6 +1860,9 @@
         padding: 13px 15px; font-size: 12px; font-weight: 400;
         letter-spacing: 0; z-index: 100; box-shadow: 0 10px 28px rgba(0,0,0,.18);
         max-height: 320px; overflow-y: auto;
+        /* Reaching the end of a long analysis must not start scrolling the page
+           underneath — in the Ad Library that would close the panel mid-read. */
+        overscroll-behavior: contain;
         animation: cb-pop .16s ease-out;
       }
       /* Shared by the badge and the widget's detail window. These were scoped

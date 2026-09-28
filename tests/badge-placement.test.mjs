@@ -297,5 +297,86 @@ for (const [what, ad, expectRoot] of [
   await page.close();
 }
 
+// 6. Ad Library: an open panel closes when the page scrolls the card up toward
+//    the filter bar — but reading a long analysis must not close it, whether by
+//    scrolling inside the panel or by a wheel that reaches the panel's end.
+{
+  const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+  await page.route("**/*", route =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html><body></body>" }));
+  await page.goto("https://www.facebook.com/ads/library/?active_status=active&country=PH");
+  await page.setContent(`<!doctype html><body style="margin:0">
+    <div id="filters" style="position:sticky;top:0;height:60px;background:#fff">Filters</div>
+    <div style="height:150px"></div>
+    <div id="grid" style="width:360px">
+      <div class="card">
+        <div>Library ID: 1963449790957486</div>
+        <div><div role="button">See ad details</div></div>
+        <div class="preview">
+          <a href="https://www.facebook.com/ACOMph/"><strong><span>ACOM Consumer Finance Corporation</span></strong></a>
+          <span>Sponsored</span>
+          <div>Your Trusted Cash Loan Partner. Apply online anytime, 24/7!</div>
+          <a href="https://l.facebook.com/l.php?u=${encodeURIComponent("https://www.acom.com.ph/")}">WWW.ACOM.COM.PH</a>
+          <div style="height:600px"></div>
+        </div>
+      </div>
+    </div>
+    <div style="height:3000px"></div></body>`);
+  await load(page);
+
+  const isOpen = () => page.evaluate(() =>
+    !document.querySelector(".credibytes-badge .cb-detail").hidden);
+  const settle = () => page.waitForTimeout(150);   // scroll events are async
+  await page.evaluate(() => window.scrollTo(0, 100));
+  await page.click(".credibytes-badge .cb-toggle");
+
+  const scrollable = await page.evaluate(() => {
+    const d = document.querySelector(".credibytes-badge .cb-detail");
+    return d.scrollHeight > d.clientHeight;
+  });
+  r.check("fixture: the open analysis is long enough to scroll", scrollable, "");
+
+  await page.evaluate(() => { document.querySelector(".credibytes-badge .cb-detail").scrollTop = 120; });
+  await settle();
+  r.check("scrolling inside the analysis leaves it open", await isOpen(), "");
+
+  // Asserted on the style, not by wheeling past the end: in this harness a
+  // synthetic wheel over the panel does not chain into the page even without
+  // the rule, so a behavioural check here would pass either way and prove
+  // nothing. That `contain` stops the chaining in Chrome was checked separately.
+  const overscroll = await page.evaluate(() =>
+    getComputedStyle(document.querySelector(".credibytes-badge .cb-detail")).overscrollBehaviorY);
+  r.check("reaching the end of the analysis cannot scroll the page (overscroll contained)",
+          overscroll === "contain", overscroll);
+
+  await page.evaluate(() => window.scrollBy(0, -60));
+  await settle();
+  r.check("scrolling the page UP (card away from the bar) leaves it open", await isOpen(), "");
+
+  await page.evaluate(() => window.scrollBy(0, 200));
+  await settle();
+  const closed = await page.evaluate(() => {
+    const b = document.querySelector(".credibytes-badge");
+    return { hidden: b.querySelector(".cb-detail").hidden, lifted: b.classList.contains("cb-open"),
+             toggle: b.querySelector(".cb-toggle").getAttribute("aria-expanded") };
+  });
+  r.check("scrolling the page DOWN closes it, and the toggle and lift follow",
+          closed.hidden && !closed.lifted && closed.toggle === "false", JSON.stringify(closed));
+  await page.close();
+}
+
+// 7. The feed was not part of that request: an open panel there stays open.
+{
+  const page = await browser.newPage();
+  await page.setContent(feedPage(story(1, SALMON)) + `<div style="height:3000px"></div>`);
+  await load(page);
+  await page.click(".credibytes-badge .cb-toggle");
+  await page.evaluate(() => window.scrollBy(0, 200));
+  await page.waitForTimeout(150);
+  r.check("feed: scrolling does not close an open panel",
+          await page.evaluate(() => !document.querySelector(".credibytes-badge .cb-detail").hidden), "");
+  await page.close();
+}
+
 await browser.close();
 process.exit(r.finish() ? 1 : 0);
