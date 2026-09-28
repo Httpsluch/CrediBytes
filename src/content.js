@@ -708,6 +708,37 @@
   // remotely.
   const BACKEND_WAIT_MS = 2500;
 
+  // How long an ad through a link service waits for the backend to say where it
+  // leads. Longer than background.js's own 4 s timeout, so that timeout — which
+  // also wakes a sleeping instance — is the one that fires. After it, the link
+  // is judged as shown and the badge says it could not be followed.
+  const RESOLVE_WAIT_MS = 4500;
+
+  function followLinkService(url) {
+    if (!extensionAlive()) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (v) => { if (!settled) { settled = true; resolve(v); } };
+      safeSendMessage({ type: "RESOLVE_LINK", url: withoutFbclid(url) }, (res) =>
+        finish(res && res.ok && typeof res.final === "string" ? res.final : null));
+      setTimeout(() => finish(null), RESOLVE_WAIT_MS);
+    });
+  }
+
+  // fbclid is Facebook's per-click identifier. It plays no part in where a link
+  // leads, and it ties the request to one person's click, so it is removed before
+  // the link leaves the browser. The backend strips it again.
+  function withoutFbclid(url) {
+    try {
+      const u = new URL(url);
+      if (!u.searchParams.has("fbclid")) return url;
+      u.searchParams.delete("fbclid");
+      return u.toString();
+    } catch {
+      return url;
+    }
+  }
+
   function requestStage1Prediction(advertiserName, appName, hasOfficialWebsite) {
     const localResult = () =>
       window.CrediBytesStage1?.predict(advertiserName, appName, hasOfficialWebsite) ?? null;
@@ -931,6 +962,8 @@
     const claimedAppName = matchResult._claimedAppName || "";
     const fromCaption    = !!matchResult._fromCaption;
     const landingHost    = window.CrediBytesMatcher.normHost(matchResult._adUrl || "");
+    const followed       = matchResult._followed || null;
+    const via            = matchResult._via || "";
     const riskDesc   = stage1Result?.risk_desc   ?? null;
     const isApp      = stage1Result?.is_app      ?? null;
     const prob       = stage1Result?.probability ?? null;
@@ -1017,6 +1050,8 @@
       legitimacy, status, isStoreUrl: store,
       company: ref?.company || "", sec: ref?.sec || "",
       destHost: landingHost, suggestion,
+      viaHost: followed && followed !== "unresolved" ? via : "",
+      redirect: followed,
     }, settings.lang);
 
     addSection(T("card.howChecked"));
@@ -1085,9 +1120,14 @@
     // Provenance matters: this verdict rests on the destination the ad displays
     // rather than a link we resolved. Meta renders that caption from the real
     // target, but the distinction should be visible rather than implied.
-    if (fromCaption && landingHost) {
+    // Provenance again: the link went through a link service. Either the verdict
+    // is on where it leads, or it could not be followed and is on the link as
+    // shown — and a reader deserves to know which.
+    if ((fromCaption && landingHost) || (followed && via)) {
       addSection(T("sec.destination"));
-      addRow("", T("note.fromCaption", { host: landingHost }));
+      if (fromCaption && landingHost) addRow("", T("note.fromCaption", { host: landingHost }));
+      if (followed === "unresolved") addRow("", T("ev.redirectUnresolved", { via }));
+      else if (followed && via) addRow("", T("ev.redirected", { via, host: landingHost }));
     }
 
     // The Stage 1 profile score was rendered here. Removed with the redesign:
@@ -1906,16 +1946,54 @@
   async function processAd(adEl) {
     adEl.setAttribute(PROCESSED, "1");
 
-    const { landingUrl, adText, claimedAppName, advertiserName,
-            destinationFromCaption } = extractAdData(adEl);
+    const M = window.CrediBytesMatcher;
+    const data = extractAdData(adEl);
+    const { adText, claimedAppName, advertiserName, destinationFromCaption } = data;
+    let landingUrl = data.landingUrl;
+
+    // A link service's host is judged as nothing: the destination is. Where the
+    // link names its destination (Firebase's link=, AppsFlyer's af_web_dp), it
+    // is read here with no request — before isOLAAd, so a declared destination
+    // can qualify the ad.
+    let via = "";
+    let followed = null;                  // "read" | "resolved" | "unresolved"
+    const named = M.linkServiceTarget(landingUrl);
+    if (named) {
+      via = M.normHost(landingUrl);
+      landingUrl = named;
+      followed = "read";
+    }
+
     if (!isOLAAd(adText, landingUrl, advertiserName, claimedAppName)) return;
 
-    const matchResult = window.CrediBytesMatcher.matchUrl(
-      landingUrl, claimedAppName, advertiserName
-    );
+    // Otherwise the backend follows it. Asked only here, after the ad has been
+    // judged a lending ad, so the links of everything else a user scrolls past
+    // never leave the browser.
+    if (M.isLinkService(landingUrl)) {
+      via = via || M.normHost(landingUrl);
+      const final = await followLinkService(landingUrl);
+      if (final) {
+        landingUrl = final;
+        followed = "resolved";
+      } else {
+        // Judged as shown — and said so, rather than presenting the service's
+        // host as though it were where the ad leads.
+        followed = "unresolved";
+      }
+    }
+
+    const matchResult = M.matchUrl(landingUrl, claimedAppName, advertiserName);
+    if (followed) {
+      const host = M.normHost(landingUrl);
+      const key = followed === "unresolved" ? "ev.redirectUnresolved" : "ev.redirected";
+      const params = followed === "unresolved" ? { via } : { via, host };
+      matchResult.evidence.unshift({ state: "info", key, params, text: T(key, params) });
+    }
     matchResult._adUrl = landingUrl;
     matchResult._claimedAppName = claimedAppName;
     matchResult._fromCaption = destinationFromCaption;
+    matchResult._via = via;
+    matchResult._followed = followed;
 
     // Only a confirmed SEC match counts. matchResult.suggestion is a fuzzy
     // guess and must not be treated as a verified website.
@@ -1994,6 +2072,13 @@
         // reads landingHost directly; only the stored record needs this.
         destUrl:        landingUrl || "",
         destHost:       window.CrediBytesMatcher.normHost(landingUrl || ""),
+        // The link service the ad went through, when the destination above is
+        // where it LEADS rather than the link as shown. Empty when the link was
+        // not followed — then destHost is the service itself, and `redirect`
+        // ("unresolved") is what tells the card to say so.
+        viaHost:        matchResult._followed && matchResult._followed !== "unresolved"
+                          ? matchResult._via || "" : "",
+        redirect:       matchResult._followed || null,
         isApp:          stage1Result?.is_app      ?? null,
         prob:           stage1Result?.probability ?? null,
         riskLabel:      stage1Result?.risk_label  ?? null,

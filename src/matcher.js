@@ -45,6 +45,63 @@
     return SOCIAL_HOSTS.some(d => h === d || h.endsWith("." + d));
   }
 
+  // Attribution and short-link services advertisers route their links through.
+  // No registrant declares these hosts, so judging one judges nothing: a
+  // JuanHand ad on juanhand.onelink.me read Unverified while it lands on
+  // privacy.juanhand.com, under the declared juanhand.com. The thesis collector
+  // followed redirects, so on 48 of 2,164 collected ads the extension and the
+  // thesis disagreed.
+  //
+  // Mirrored by LINK_SERVICES in CrediBytes-Backend/resolver.py, which follows
+  // these for us. Keep the two in step: a host listed here but not there is
+  // refused by the server and reported as not followed.
+  const LINK_SERVICES = [
+    "onelink.me",                            // AppsFlyer OneLink
+    "app.adjust.com", "adj.st", "go.link",   // Adjust
+    "app.link",                              // Branch
+    "page.link",                             // Firebase Dynamic Links
+    "bxtrck.org",                            // affiliate tracker seen in collected ads
+    "bit.ly", "tinyurl.com", "cutt.ly", "rb.gy", "is.gd", "t.ly",
+    "s.id", "shorturl.at", "ow.ly", "rebrand.ly",
+  ];
+
+  function isLinkService(url) {
+    const h = normHost(url);
+    return !!h && LINK_SERVICES.some(s => h === s || h.endsWith("." + s));
+  }
+
+  // Services that carry their destination in the link itself, read here with no
+  // request at all. The parameter IS the service's own redirect instruction, so
+  // it is exactly as trustworthy as the link — which is what gets judged
+  // otherwise. Highest-precedence parameter first.
+  //   Firebase:  ofl (desktop override), else link — measured: the 14 collected
+  //              Home Credit page.link ads name https://app.gma.homecredit.ph/home,
+  //              which is where the thesis collector landed.
+  //   AppsFlyer: af_r (redirect override), af_web_dp (desktop destination).
+  //   Branch:    $desktop_url, $fallback_url.
+  //   Adjust:    redirect.
+  const LINK_TARGET_PARAMS = [
+    ["page.link", ["ofl", "link"]],
+    ["onelink.me", ["af_r", "af_web_dp"]],
+    ["app.link", ["$desktop_url", "$fallback_url"]],
+    ["app.adjust.com", ["redirect"]], ["adj.st", ["redirect"]], ["go.link", ["redirect"]],
+  ];
+
+  function linkServiceTarget(url) {
+    const h = normHost(url);
+    if (!h) return "";
+    for (const [service, params] of LINK_TARGET_PARAMS) {
+      if (h !== service && !h.endsWith("." + service)) continue;
+      let q;
+      try { q = new URL(url).searchParams; } catch { return ""; }
+      for (const p of params) {
+        const v = q.get(p);
+        if (v && /^https?:\/\//i.test(v)) return v;
+      }
+    }
+    return "";
+  }
+
   function playPackageId(url) {
     try {
       const u = new URL(url);
@@ -638,6 +695,7 @@
 
   window.CrediBytesMatcher = { matchUrl, playPackageId, appleAppId, normHost, isStoreUrl, isSocialUrl,
                                mentionsKnownRegistrant, isDeclaredDestination,
+                               isLinkService, linkServiceTarget,
                                lookupRevoked, revokedWording,
                                revokedCount: revokedIndex.size , findBySec};
 

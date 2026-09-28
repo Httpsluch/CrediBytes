@@ -61,6 +61,12 @@
       // ── Evidence trail ───────────────────────────────────────────────────
       "ev.noDestination": "No destination could be read from this ad.",
       "ev.destination": "Destination: {host}",
+      "ev.redirected":
+        "This link goes through {via}, a link service, and leads to {host}. " +
+        "Where it leads is what was checked, not the service.",
+      "ev.redirectUnresolved":
+        "This link goes through {via}, a link service. Where it leads could not be " +
+        "confirmed, so the link was checked as shown.",
       "ev.playDeclared": "Play package {pkg} is declared by {company}.",
       "ev.playNotFound": "Play package {pkg} is not in the SEC registry.",
       "ev.appleDeclared": "Apple ID {id} is declared by {company}.",
@@ -267,6 +273,8 @@
       "card.whatMeans": "WHAT THIS MEANS",
       "card.action": "RECOMMENDED ACTION",
       "check.destination": "Advertisement destination: {value}",
+      "check.via": "{host} (through {via})",
+      "check.viaUnresolved": "{host} (a link service; where it leads is not confirmed)",
       "check.package": "App package: {value}",
       "check.name": "Advertised name: {value}",
       "check.none": "—",
@@ -342,6 +350,12 @@
       // ── Evidence trail ───────────────────────────────────────────────────
       "ev.noDestination": "Walang mabasang destinasyon sa ad na ito.",
       "ev.destination": "Destinasyon: {host}",
+      "ev.redirected":
+        "Dumadaan ang link na ito sa {via}, isang link service, at papunta ito sa " +
+        "{host}. Ang pinupuntahan nito ang sinuri, hindi ang service.",
+      "ev.redirectUnresolved":
+        "Dumadaan ang link na ito sa {via}, isang link service. Hindi makumpirma kung " +
+        "saan ito papunta, kaya ang link mismo ang sinuri.",
       "ev.playDeclared": "Ang Play package {pkg} ay idineklara ng {company}.",
       "ev.playNotFound": "Ang Play package {pkg} ay wala sa SEC registry.",
       "ev.appleDeclared": "Ang Apple ID {id} ay idineklara ng {company}.",
@@ -560,6 +574,8 @@
       "card.whatMeans": "ANO ANG IBIG SABIHIN NITO",
       "card.action": "INIREREKOMENDANG AKSYON",
       "check.destination": "Destinasyon ng ad: {value}",
+      "check.via": "{host} (sa pamamagitan ng {via})",
+      "check.viaUnresolved": "{host} (isang link service; hindi kumpirmado kung saan papunta)",
       "check.package": "App package: {value}",
       "check.name": "Pangalang ginamit sa ad: {value}",
       "check.none": "—",

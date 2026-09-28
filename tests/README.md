@@ -1,7 +1,7 @@
 # Extension Tests
 
-![Suites](https://img.shields.io/badge/suites-22-4285F4)
-![Assertions](https://img.shields.io/badge/assertions-479-2e9e4f)
+![Suites](https://img.shields.io/badge/suites-23-4285F4)
+![Assertions](https://img.shields.io/badge/assertions-502-2e9e4f)
 ![Runner](https://img.shields.io/badge/Playwright-Chromium-45ba4b)
 
 Browser tests that load the **real** content scripts into a Chromium page
@@ -63,6 +63,7 @@ stub is also required: without it `popup.js` loaded twice and threw
 | `ad-label-variants` | 10 | Accounts whose ad label is not "Sponsored": the measured `/ads/about` link with an `aria-labelledby` "Ad" label in a closed shadow root, each signal alone, and the Filipino "May Sponsor"; bare text "Ad", long labels and the link inside a menu not counting |
 | `badge-placement` | 52 | Feed ads rooted on the post (`<article>`, or the `aria-posinset` story 18 levels up) rather than the header row, as a probe of the live feed showed; the feed badge full width directly above the header row (avatar and name), found by structure and checked at two card widths, never in the name column or the row, even when the last-resort root is one of them; one badge and one saved scan per ad; the Ad Library badge just above the ad preview; the closed bar claiming no `z-index`, so the sticky filter bar stays on top; the analysis still floating, lifted only while open; in the Ad Library, closing when the page scrolls the card up toward the filter bar but not when the analysis itself is scrolled, with overscroll contained |
 | `ad-library-caption` | 7 | Destination read from displayed caption text when a preview exposes no outbound link; provenance disclosed on the badge |
+| `link-services` | 23 | Links through a link service (OneLink, Adjust, Firebase, bit.ly): followed via the backend to where they lead and verified there; judged as shown, and said so, when the backend refuses or never answers; a destination named in the link read with no request; only lending ads' link-service links ever sent, without `fbclid` |
 | `link-capture` | 9 | `data-lynx-uri` extraction, redirect unwrapping through four hosts, link ranking by type rather than document order |
 
 ### Verdicts and data

@@ -122,7 +122,15 @@
   function checks(scan, lang) {
     const none = T("check.none", null, lang);
 
-    const dest = scan.destHost || none;
+    // Through a link service, the destination row names both: where the ad
+    // leads, and what it went through — or, when that could not be followed,
+    // that the host shown is only the service.
+    let dest = scan.destHost || none;
+    if (scan.destHost && scan.viaHost) {
+      dest = T("check.via", { host: scan.destHost, via: scan.viaHost }, lang);
+    } else if (scan.destHost && scan.redirect === "unresolved") {
+      dest = T("check.viaUnresolved", { host: scan.destHost }, lang);
+    }
 
     let pkg;
     if (!scan.isStoreUrl) pkg = T("check.pkgNotStore", null, lang);

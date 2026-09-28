@@ -231,7 +231,11 @@ async function warmBackend(force = false) {
   }
 }
 
-const isFacebook = (url) => typeof url === "string" && /^https:\/\/(www\.)?facebook\.com\//.test(url);
+// Every host the content scripts run on. web.facebook.com is where many
+// Philippine users land; matching www alone meant the backend was never woken
+// for them, and a sleeping backend now also means an unfollowed link.
+const isFacebook = (url) => typeof url === "string" &&
+  /^https:\/\/((www|web|m)\.)?facebook\.com\//.test(url);
 
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
   if (changeInfo.status === "loading" && isFacebook(tab.url)) warmBackend();
@@ -348,6 +352,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Where a link-service URL (OneLink, Adjust, bit.ly, …) actually leads.
+  // content.js sends only links on its LINK_SERVICES list, only for ads it has
+  // already judged to be lending ads, and with fbclid removed.
+  if (message.type === "RESOLVE_LINK") {
+    resolveLinkCached(message.url)
+      .then(r => sendResponse({
+        ok: !!(r && r.ok),
+        final: r && r.ok ? r.final : null,
+        reason: r ? (r.reason || null) : "unreachable",
+      }))
+      .catch(() => sendResponse({ ok: false, final: null, reason: "unreachable" }));
+    return true;
+  }
+
   if (message.type === "CHECK_LISTING") {
     // The advertiser name feeds dev_matches_advertiser, one of the 15 features.
     readListing(message.url, message.advertiserName)
@@ -394,6 +412,55 @@ function listingErrorCode(err) {
     return "unavailable";
   }
   return "generic";
+}
+
+// ── Link services, followed on the server ───────────────────────────────────
+// The backend's /resolve reads the redirect a link service answers with and
+// never loads the destination (see CrediBytes-Backend/resolver.py). It runs on
+// the server because the browser could follow an unknown destination only with
+// an all-sites permission, and there the link service sees the server's
+// address rather than the user's.
+//
+// Answers are cached per link, as the backend's are: one JuanHand link was
+// behind nine collected ads. A network failure is NOT cached — it usually
+// means a sleeping instance, and the next ad should try again once it wakes.
+const RESOLVE_TIMEOUT_MS = 4000;
+const RESOLVE_CACHE_MAX = 300;
+const resolveCache = new Map();
+
+function resolveLinkCached(url) {
+  if (typeof url !== "string" || !url) return Promise.resolve(null);
+  if (resolveCache.has(url)) return resolveCache.get(url);
+  const pending = postResolve(url).then((r) => {
+    if (!r) resolveCache.delete(url);
+    return r;
+  });
+  resolveCache.set(url, pending);
+  if (resolveCache.size > RESOLVE_CACHE_MAX) {
+    resolveCache.delete(resolveCache.keys().next().value);
+  }
+  return pending;
+}
+
+async function postResolve(url) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), RESOLVE_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${BACKEND_URL}/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (_e) {
+    // Most likely asleep. Wake it, so the next link-service ad is followed.
+    warmBackend(true);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // The backend is the preferred source for Stage 1 so the deployed service

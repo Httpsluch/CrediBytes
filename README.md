@@ -1,7 +1,7 @@
 # CrediBytes
 
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)
-![Tests](https://img.shields.io/badge/tests-22%20suites%20%2F%20479%20assertions-2e9e4f)
+![Tests](https://img.shields.io/badge/tests-23%20suites%20%2F%20502%20assertions-2e9e4f)
 ![Models](https://img.shields.io/badge/LightGBM-2%20models%20bundled-76b729)
 ![Status](https://img.shields.io/badge/version-1.0.0-blue)
 
@@ -57,7 +57,7 @@ history.
 ### Run the tests
 
 ```bash
-node tests/run-all.mjs          # expect 22/22 suites, 479 assertions
+node tests/run-all.mjs          # expect 23/23 suites, 502 assertions
 node tests/stage3.test.mjs      # or any single suite
 ```
 
@@ -220,7 +220,7 @@ CrediBytes/
 │   ├── background.js    20 KB  MV3 worker — storage writes, fetches, action behaviour
 │   ├── panel-init.js     2 KB  Applies theme and panel class before first paint
 │   └── popup.html/.css/.js     Popup and side panel (one file serves both surfaces)
-└── tests/                     22 Playwright suites — see tests/README.md
+└── tests/                     23 Playwright suites — see tests/README.md
 ```
 
 ### Load order
@@ -284,7 +284,7 @@ scan storage along with it.
 ## Testing
 
 ```bash
-node tests/run-all.mjs                 # full suite: 22 suites, 479 assertions
+node tests/run-all.mjs                 # full suite: 23 suites, 502 assertions
 node tests/stage3.test.mjs             # a single suite
 node tests/revoked-normalisation-parity.test.mjs
 ```
