@@ -276,7 +276,26 @@
 
   // ── Ad detection ────────────────────────────────────────────────────────────
 
-  const AD_ROOT_SELECTOR = '[role="article"], [data-pagelet]';
+  // `article` comes from a probe of the live news feed (2026-09-28). Walking up
+  // from the Sponsored label:
+  //
+  //   #7   div flex/row   w=629  txt=46    <- header row: avatar | name | menu
+  //   #12  article        w=629  txt=710   <- the whole post
+  //   #18  div role=article aria-posinset  <- the feed story
+  //
+  // Nothing matched within the 14 levels searched, so every feed ad fell through
+  // to isPlausibleAdRoot() — which stopped at the header row, because the
+  // Sponsored label is itself a link (/ads/about/…) and the row clears 40
+  // characters. The ad was then judged on its header alone: an InvestEd ad was
+  // dropped as "not a lending ad" (its body, naming Educ4All Lending Inc., was
+  // out of scope) and a Salmon ad read Unverified off a facebook.com link.
+  const AD_ROOT_SELECTOR = '[role="article"], [data-pagelet], article';
+
+  // A feed story. Searched further up than the containers above, because it sits
+  // deeper (18 levels in the probe) — and unlike [data-pagelet] it only ever
+  // wraps ONE story, so climbing that far cannot swallow a neighbouring post or
+  // the right-hand rail.
+  const FEED_STORY_SELECTOR = "[aria-posinset]";
 
   // A real ad container has a link and more text than just the word
   // "Sponsored". This is what stops us latching onto the tiny label wrapper.
@@ -360,8 +379,15 @@
       if (el.matches?.(AD_ROOT_SELECTOR)) return el;
       el = el.parentElement;
     }
-    // No post container (common in the news feed) — fall back to the nearest
-    // ancestor that actually looks like a whole ad.
+    el = start;
+    for (let i = 0; i < 30 && el && el !== document.body; i++) {
+      if (el.matches?.(FEED_STORY_SELECTOR)) return el;
+      el = el.parentElement;
+    }
+    // No post container at all — fall back to the nearest ancestor that looks
+    // like a whole ad. This is the path that stopped at the header row; it stays
+    // as a last resort, and badgeSlot() keeps the badge out of that row even
+    // when it is taken.
     el = start;
     for (let i = 0; i < 14 && el && el !== document.body; i++) {
       if (isPlausibleAdRoot(el)) return el;
@@ -424,17 +450,22 @@
     return true;
   }
 
+  // Returns the ELEMENT, not its text: badgeSlot() needs to know where the name
+  // sits in order to place the badge above the header rather than inside it.
   function findNameIn(scope) {
     for (const sel of NAME_SELECTORS) {
       for (const el of scope.querySelectorAll(sel)) {
-        const text = el.textContent?.trim();
-        if (looksLikeName(text)) return text;
+        if (looksLikeName(el.textContent?.trim())) return el;
       }
     }
-    return "";
+    return null;
   }
 
   function getAdvertiserName(adEl, marker) {
+    return findAdvertiserNode(adEl, marker)?.textContent.trim() || "";
+  }
+
+  function findAdvertiserNode(adEl, marker) {
     // Search outward from the "Sponsored" label first.
     //
     // The page name always sits in the same header block as that label, so the
@@ -705,9 +736,92 @@
     return { cls: "cb-unverified", icon: "!", label: T("verdict.unverified.label"), bar: T("verdict.unverified.bar") };
   }
 
+  // ── Where the badge goes ─────────────────────────────────────────────────────
+  // Above the ad's header, inside the ad, and never inside a horizontal row.
+  //
+  // It used to be the root's first child. With the root stuck on the header row
+  // (see AD_ROOT_SELECTOR) that made the badge one more flex item beside the
+  // avatar and the name: the name lost width and wrapped, and the badge itself
+  // was squeezed. Fixing the root does not settle placement on its own either —
+  // in the measured feed the post's first child sits OUTSIDE its rounded card,
+  // so "first child" would have put the badge between two posts.
+  //
+  // So the slot is found from the header outwards: the lowest container that
+  // stacks its children vertically, spans (nearly) the ad's width, and is not
+  // itself inside a row. The badge goes directly above the branch holding the
+  // header. On the measured feed that is the header's full-width wrapper, inside
+  // the card; in the Ad Library it lands just above the ad preview, below the
+  // card's Library ID block.
+  function isRow(el) {
+    const c = getComputedStyle(el);
+    return c.display.includes("flex") && !c.flexDirection.startsWith("column") &&
+           el.childElementCount > 1;
+  }
+
+  function stacksVertically(el) {
+    const c = getComputedStyle(el);
+    if (c.display === "block" || c.display === "flow-root" || c.display === "list-item") return true;
+    return c.display.includes("flex") && c.flexDirection.startsWith("column");
+  }
+
+  // True when `el` is a narrow item inside a row — somewhere the badge would be
+  // squeezed. Judged by width rather than by "is there a row above": the post's
+  // rounded card is itself a row's item, and fills it; the name column is one
+  // too, and does not. The walk stops three levels past the root, because the
+  // page's own layout (nav | feed | right rail) is a row the post is rightly
+  // narrow inside.
+  function squeezedByRow(el, adEl) {
+    const w = el.getBoundingClientRect().width;
+    let past = el === adEl || !adEl.contains(el) ? 0 : -1;   // -1: not yet past the root
+    for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+      if (past >= 0 && ++past > 3) break;
+      if (a === adEl) past = 0;
+      if (isRow(a) && w < a.getBoundingClientRect().width * 0.8) return true;
+    }
+    return false;
+  }
+
+  function badgeSlot(adEl, marker, nameEl) {
+    const fallback = { parent: adEl, before: adEl.firstChild };
+    if (!marker || !adEl.contains(marker)) return fallback;
+
+    // The header: the smallest subtree holding both the Sponsored label and the
+    // advertiser's name.
+    let header = marker;
+    if (nameEl && adEl.contains(nameEl)) {
+      while (header !== adEl && !header.contains(nameEl)) header = header.parentElement;
+    }
+
+    // Candidate slots, innermost first: directly above the header's branch at
+    // each level. A few levels past the root are allowed, which only matters
+    // when the last-resort path in climbToAdRoot() rooted the ad on part of the
+    // header — the row itself, or the name column inside it once a long name
+    // clears 40 characters. Every slot inside such a root is inside the row.
+    const slots = header === adEl ? [[adEl, adEl.firstChild]] : [];
+    let beyondRoot = 0;
+    for (let c = header; c.parentElement && c.parentElement !== document.body; c = c.parentElement) {
+      if (!adEl.contains(c.parentElement) && ++beyondRoot > 6) break;
+      slots.push([c.parentElement, c]);
+    }
+
+    const width = adEl.getBoundingClientRect().width;
+    for (const [p, before] of slots) {
+      if (!stacksVertically(p)) continue;
+      if (width && p.getBoundingClientRect().width < width * 0.8) continue;
+      if (squeezedByRow(p, adEl)) continue;
+      return { parent: p, before };
+    }
+    return fallback;
+  }
+
+  // The badge can sit just outside its root (see badgeSlot), where
+  // adEl.querySelector would not find it again.
+  const adBadges = new WeakMap();
+
   // ── Badge injection (createElement — no innerHTML) ───────────────────────────
 
   function injectBadge(adEl, matchResult, stage1Result, advertiserName) {
+    adBadges.get(adEl)?.remove();
     adEl.querySelector("." + BADGE_CLASS)?.remove();
 
     const { legitimacy, reason, ref, status, suggestion } = matchResult;
@@ -897,7 +1011,10 @@
     badge.appendChild(labelSpan);
     badge.appendChild(toggle);
     badge.appendChild(detail);
-    adEl.insertBefore(badge, adEl.firstChild);
+    const marker = adMarkers.get(adEl);
+    const slot = badgeSlot(adEl, marker, findAdvertiserNode(adEl, marker));
+    slot.parent.insertBefore(badge, slot.before);
+    adBadges.set(adEl, badge);
     // Persistence is handled by saveScan() in processAd(), so history is
     // identical across display modes.
   }
@@ -1486,12 +1603,22 @@
          dark mode would otherwise show through and wreck the contrast, and this
          element is injected into a page whose CSS we do not control, so nothing
          may be inherited. */
+      /* No position and no z-index, deliberately. The badge was position:
+         relative; z-index: 10, which painted it OVER the Ad Library's sticky
+         filter bar (Filters, Sort by, Save search, Active status) whenever a
+         card scrolled underneath it. A plain in-flow block cannot rise above
+         anything Facebook positions, which is the only safe relationship for UI
+         injected into a page whose stacking we do not control.
+
+         flex-wrap puts the analysis on its own line below the bar when opened —
+         see .cb-detail. Inset from the card edge because the slot badgeSlot()
+         finds in the feed is the header's full-width wrapper. */
       .credibytes-badge {
-        display: flex; align-items: center; gap: 10px;
-        padding: 11px 14px; margin: 8px 0; border-radius: 10px;
+        display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+        padding: 11px 14px; margin: 8px 12px; border-radius: 10px;
         font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
         font-size: 14px; font-weight: 800; letter-spacing: .3px; line-height: 1.25;
-        border: none; position: relative; z-index: 10; box-sizing: border-box;
+        border: none; box-sizing: border-box;
         color: #fff;
         animation: cb-pop .2s ease-out;
         transition: box-shadow .18s ease, transform .18s ease;
@@ -1582,12 +1709,16 @@
         --d-key: #9aa0b4; --d-sec: #757b8f; --d-line: #262b38;
       }
 
+      /* In the flow, not floating. It was position: absolute with z-index 100,
+         laid over the ad below it — and over the Ad Library's sticky filter bar
+         too, the same fault as the badge. Opening it now pushes the ad down, like
+         an accordion; a full-width flex item on its own wrapped line. */
       .credibytes-badge .cb-detail {
-        position: absolute; top: calc(100% + 5px); left: 0; right: 0;
+        flex: 1 0 100%; box-sizing: border-box;
         background: var(--d-bg); color: var(--d-fg);
         border: 1px solid var(--d-border); border-radius: 12px;
         padding: 13px 15px; font-size: 12px; font-weight: 400;
-        letter-spacing: 0; z-index: 100; box-shadow: 0 10px 28px rgba(0,0,0,.18);
+        letter-spacing: 0;
         max-height: 320px; overflow-y: auto;
         animation: cb-pop .16s ease-out;
       }

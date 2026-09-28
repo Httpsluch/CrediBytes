@@ -1,7 +1,7 @@
 # Extension Tests
 
-![Suites](https://img.shields.io/badge/suites-20-4285F4)
-![Assertions](https://img.shields.io/badge/assertions-407-2e9e4f)
+![Suites](https://img.shields.io/badge/suites-21-4285F4)
+![Assertions](https://img.shields.io/badge/assertions-443-2e9e4f)
 ![Runner](https://img.shields.io/badge/Playwright-Chromium-45ba4b)
 
 Browser tests that load the **real** content scripts into a Chromium page
@@ -60,6 +60,7 @@ stub is also required: without it `popup.js` loaded twice and threw
 |---|---|---|
 | `ad-detection` | 15 | Advertiser-name extraction in the news feed (no `role="article"`) and in search results; noise rejection; the fuzzy suggestion path, including a generic link-preview headline no longer burying the brand |
 | `ad-library-root` | 11 | Ad Library cards rooted on the Library ID marker; four cards in one grid judged independently; two news-feed regression checks proving that path is untouched |
+| `badge-placement` | 32 | Feed ads rooted on the post (`<article>`, or the `aria-posinset` story 18 levels up) rather than the header row, as a probe of the live feed showed; the badge above the header inside the card, never an item in a row, even when the last-resort root is the row or the name column; no `position`/`z-index`, so the Ad Library's sticky filter bar stays on top; the analysis opening in the flow |
 | `ad-library-caption` | 7 | Destination read from displayed caption text when a preview exposes no outbound link; provenance disclosed on the badge |
 | `link-capture` | 9 | `data-lynx-uri` extraction, redirect unwrapping through four hosts, link ranking by type rather than document order |
 
@@ -67,10 +68,10 @@ stub is also required: without it `popup.js` loaded twice and threw
 
 | Suite | Assertions | Covers |
 |---|---|---|
-| `stage3` | 65 | Feature order and count; missing values becoming `NaN` rather than `0`; Play dataset identification by shape; Data safety parsing on both stores; Apple privacy-policy extraction; service-worker scope |
+| `stage3` | 66 | Feature order and count; missing values becoming `NaN` rather than `0`; Play dataset identification by shape; Data safety parsing on both stores; Apple privacy-policy extraction; service-worker scope |
 | `i18n` | 48 | Key parity between `en` and `tl`; nested descriptor resolution; stored scans re-rendering in the language selected now |
 | `revoked-list` | 38 | Advisory versus verdict paths; that a name match never changes a verdict, is never worded as a finding about the advertiser, and never demotes a URL-verified advertisement |
-| `analysis-detail` | 39 | Expanded card sections, evidence rows, declared-channel links, possible-match presentation |
+| `analysis-detail` | 42 | Expanded card sections, evidence rows, declared-channel links, possible-match presentation |
 | `local-stage1` | 15 | In-page tree walk and sigmoid; risk-tier banding; feature construction including the empty-app-name imputation |
 | `backend-precedence` | 11 | A warm backend wins the race; a cold one loses and the local model fills in; a `null` result is never cached |
 | `revoked-normalisation-parity` | 3 | Python and JavaScript normalise all 1,413 revoked names identically |
