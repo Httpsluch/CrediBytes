@@ -1,7 +1,7 @@
 # CrediBytes
 
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)
-![Tests](https://img.shields.io/badge/tests-21%20suites%20%2F%20443%20assertions-2e9e4f)
+![Tests](https://img.shields.io/badge/tests-21%20suites%20%2F%20444%20assertions-2e9e4f)
 ![Models](https://img.shields.io/badge/LightGBM-2%20models%20bundled-76b729)
 ![Status](https://img.shields.io/badge/version-1.0.0-blue)
 
@@ -57,7 +57,7 @@ history.
 ### Run the tests
 
 ```bash
-node tests/run-all.mjs          # expect 21/21 suites, 443 assertions
+node tests/run-all.mjs          # expect 21/21 suites, 444 assertions
 node tests/stage3.test.mjs      # or any single suite
 ```
 
@@ -284,7 +284,7 @@ scan storage along with it.
 ## Testing
 
 ```bash
-node tests/run-all.mjs                 # full suite: 21 suites, 443 assertions
+node tests/run-all.mjs                 # full suite: 21 suites, 444 assertions
 node tests/stage3.test.mjs             # a single suite
 node tests/revoked-normalisation-parity.test.mjs
 ```

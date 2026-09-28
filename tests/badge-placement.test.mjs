@@ -15,9 +15,14 @@
  *   #18 div role=article aria-posinset
  *
  * Nothing matched the old root selector within 14 levels, so the root fell back
- * to the header row (#7): the badge became a flex item beside the name, and the
- * ad was judged on its header alone. An InvestEd ad was dropped outright; a
- * Salmon ad read Unverified off a facebook.com link.
+ * to part of the header, and the ad was judged on its header alone: an InvestEd
+ * ad was dropped outright, a Salmon ad read Unverified off a facebook.com link.
+ *
+ * Where that root was the name column (#5, long names) the badge sat at the top
+ * of it — above the name, beside the avatar — and that layout was right. Where
+ * it was the row (#7, short names) the badge became a flex item beside the name
+ * and squeezed it. The badge now goes to the top of the name column for every
+ * ad, while the root is the whole post.
  *
  * Destinations in the fixtures (invested.ph, moto.salmon.ph) are assumed for
  * the test — they are declared channels of Educ4All Lending and Sunprime
@@ -49,7 +54,7 @@ const header = (name, slug) => `
       <div class="avatar" style="width:40px"><a href="https://www.facebook.com/${slug}"><svg width="40" height="40"></svg></a></div>
       <div class="namecol-wrap" style="flex:1">
         <div class="namecol" style="display:flex;flex-direction:column">
-          <div><span><a role="link" href="https://www.facebook.com/${slug}"><strong><span class="adv">${name}</span></strong></a></span></div>
+          <div class="namerow"><span><a role="link" href="https://www.facebook.com/${slug}"><strong><span class="adv">${name}</span></strong></a></span></div>
           <div><span>
             <div style="display:flex;flex-direction:row">
               <span><a aria-label="Sponsored" href="/ads/about/?__cft__[0]=x" role="link"><span>Sponsored</span></a></span>
@@ -98,22 +103,13 @@ const feedPage = (html) => `<!doctype html><body style="margin:0">
 const inspect = (storySel) => {
   const s = document.querySelector(storySel);
   const badge = s.querySelector(".credibytes-badge");
-  const hdr = s.querySelector(".hdr");
-  let inRow = false;
-  for (let a = badge?.parentElement; a && a !== s; a = a.parentElement) {
-    const c = getComputedStyle(a);
-    if (c.display.includes("flex") && !c.flexDirection.startsWith("column") &&
-        a.childElementCount > 1) inRow = true;
-  }
   return {
     root: s.querySelector("[credibytes-processed]")?.className || null,
     badgeParent: badge?.parentElement?.className || null,
     badgeNext: badge?.nextElementSibling?.className || null,
     insideCard: !!badge?.closest(".box"),
-    inRow,
     badgeW: badge ? badge.getBoundingClientRect().width : 0,
-    hdrW: hdr.getBoundingClientRect().width,
-    hdrH: hdr.getBoundingClientRect().height,
+    colW: s.querySelector(".namecol").getBoundingClientRect().width,
     nameH: s.querySelector(".adv").getBoundingClientRect().height,
   };
 };
@@ -122,10 +118,8 @@ const inspect = (storySel) => {
 {
   const page = await browser.newPage();
   await page.setContent(feedPage(story(1, INVESTED) + story(2, SALMON)));
-  const before = await page.evaluate(() => ({
-    hdrH: document.querySelector(".hdr").getBoundingClientRect().height,
-    nameH: document.querySelector(".adv").getBoundingClientRect().height,
-  }));
+  const nameBefore = await page.evaluate(() =>
+    document.querySelector(".adv").getBoundingClientRect().height);
   await load(page);
   const saved = await page.evaluate(() =>
     window.__sent.filter(m => m.type === "SAVE_SCAN").map(m => m.payload));
@@ -146,18 +140,15 @@ const inspect = (storySel) => {
 
   for (const [label, m] of [["InvestEd", inv], ["Salmon", sal]]) {
     r.check(`${label}: the root is the post, not the header row`, m.root === "post", `root=${m.root}`);
-    r.check(`${label}: badge sits directly above the header row`,
-            m.badgeParent === "hdr-wrap" && m.badgeNext === "hdr",
+    r.check(`${label}: badge sits at the top of the name column, above the name`,
+            m.badgeParent === "namecol" && m.badgeNext === "namerow",
             `parent=${m.badgeParent} next=${m.badgeNext}`);
     r.check(`${label}: badge is inside the card`, m.insideCard, "");
-    r.check(`${label}: badge is not an item in any row`, !m.inRow, "");
-    r.check(`${label}: badge spans the header's width, less its inset`,
-            m.badgeW >= m.hdrW - 30, `badge=${Math.round(m.badgeW)} hdr=${Math.round(m.hdrW)}`);
+    r.check(`${label}: badge fills the column rather than being squeezed`,
+            m.badgeW >= m.colW - 1, `badge=${Math.round(m.badgeW)} column=${Math.round(m.colW)}`);
   }
-  r.check("the header row keeps its height (nothing squeezed into it)",
-          Math.abs(inv.hdrH - before.hdrH) < 1, `${before.hdrH} -> ${inv.hdrH}`);
   r.check("the advertiser name does not wrap",
-          Math.abs(inv.nameH - before.nameH) < 1, `${before.nameH} -> ${inv.nameH}`);
+          Math.abs(inv.nameH - nameBefore) < 1, `${nameBefore} -> ${inv.nameH}`);
   await page.close();
 }
 
@@ -169,18 +160,18 @@ const inspect = (storySel) => {
   const m = await page.evaluate(() => ({
     root: document.querySelector("[credibytes-processed]")?.className || null,
     label: window.__sent.find(x => x.type === "SAVE_SCAN")?.payload.label || null,
-    next: document.querySelector(".credibytes-badge")?.nextElementSibling?.className || null,
+    parent: document.querySelector(".credibytes-badge")?.parentElement?.className || null,
   }));
   r.check("without <article>, the feed story itself is the root", m.root === "story", `root=${m.root}`);
   r.check("and the ad is still judged on its whole content", m.label === "SEC Verified", m.label);
-  r.check("and the badge still sits above the header row", m.next === "hdr", `next=${m.next}`);
+  r.check("and the badge still sits in the name column", m.parent === "namecol", `parent=${m.parent}`);
   await page.close();
 }
 
 // 3. No container at all, so the last resort roots the ad on part of its own
-//    header: the row (as measured live), or — once the advertiser's name is long
-//    enough to clear 40 characters by itself — the name column inside it. The
-//    badge must land above the row either way, never inside it.
+//    header: the row (as measured live for short names — the case that broke),
+//    or the name column once the name alone clears 40 characters (the case that
+//    always looked right). Both must now give the name-column layout.
 for (const [what, ad, expectRoot] of [
   ["the header row", SALMON, "hdr"],
   ["the name column (long advertiser name)",
@@ -199,39 +190,52 @@ for (const [what, ad, expectRoot] of [
       parent: badge?.parentElement?.className || null,
       next: badge?.nextElementSibling?.className || null,
       nameH: document.querySelector(".adv").getBoundingClientRect().height,
+      badges: document.querySelectorAll(".credibytes-badge").length,
+      saves: window.__sent.filter(x => x.type === "SAVE_SCAN").length,
     };
   });
   r.check(`fixture really does root on ${what}`, m.root === expectRoot, `root=${m.root}`);
-  r.check(`rooted on ${what}: the badge goes above the row, not into it`,
-          m.parent === "hdr-wrap" && m.next === "hdr", `parent=${m.parent} next=${m.next}`);
+  // The badge's own text lifts the header over the 40-character bar on the
+  // rescan its insertion triggers; without the processed-marker check that
+  // rooted the same ad again.
+  r.check(`rooted on ${what}: one badge and one saved scan, not two`,
+          m.badges === 1 && m.saves === 1, `badges=${m.badges} saves=${m.saves}`);
+  r.check(`rooted on ${what}: the badge is at the top of the name column, not a row item`,
+          m.parent === "namecol" && m.next === "namerow", `parent=${m.parent} next=${m.next}`);
   r.check(`rooted on ${what}: the advertiser name keeps its line`,
           Math.abs(m.nameH - before) < 1, `${before} -> ${m.nameH}`);
   await page.close();
 }
 
-// 4. Opening the analysis pushes the ad down instead of floating over it, and
-//    neither the bar nor the panel claims a stacking level.
+// 4. The analysis floats over the ad, as it always did. The CLOSED bar claims
+//    no stacking level — that is the state a user scrolls past — and the badge
+//    is lifted only while its panel is open.
 {
   const page = await browser.newPage();
   await page.setContent(feedPage(story(1, SALMON)));
   await load(page);
   const bodyTop = () => page.evaluate(() => document.querySelector(".body").getBoundingClientRect().top);
-  const closed = await bodyTop();
-  await page.click(".credibytes-badge .cb-toggle");
-  const opened = await bodyTop();
-  const s = await page.evaluate(() => {
+  const style = () => page.evaluate(() => {
     const b = document.querySelector(".credibytes-badge");
-    const d = b.querySelector(".cb-detail");
-    return {
-      badgePos: getComputedStyle(b).position, badgeZ: getComputedStyle(b).zIndex,
-      detailPos: getComputedStyle(d).position, detailH: d.getBoundingClientRect().height,
-    };
+    return { pos: getComputedStyle(b).position, z: getComputedStyle(b).zIndex,
+             detailPos: getComputedStyle(b.querySelector(".cb-detail")).position };
   });
-  r.check("badge is not positioned", s.badgePos === "static", s.badgePos);
-  r.check("badge claims no z-index", s.badgeZ === "auto", s.badgeZ);
-  r.check("analysis panel is in the flow", s.detailPos === "static", s.detailPos);
-  r.check("opening it pushes the ad body down by its height",
-          opened - closed >= s.detailH - 1, `moved ${opened - closed}px, panel ${s.detailH}px`);
+  const closedTop = await bodyTop();
+  const closed = await style();
+  await page.click(".credibytes-badge .cb-toggle");
+  const openedTop = await bodyTop();
+  const opened = await style();
+  r.check("closed badge is not positioned", closed.pos === "static", closed.pos);
+  r.check("closed badge claims no z-index", closed.z === "auto", closed.z);
+  r.check("open badge is lifted above the ad", opened.pos === "relative" && opened.z === "10",
+          JSON.stringify(opened));
+  r.check("the analysis panel floats", opened.detailPos === "absolute", opened.detailPos);
+  r.check("opening it does not push the ad down", Math.abs(openedTop - closedTop) < 1,
+          `${closedTop} -> ${openedTop}`);
+  await page.click(".credibytes-badge .cb-toggle");
+  const reclosed = await style();
+  r.check("closing it drops the lift again", reclosed.pos === "static" && reclosed.z === "auto",
+          JSON.stringify(reclosed));
   await page.close();
 }
 
@@ -266,25 +270,23 @@ for (const [what, ad, expectRoot] of [
 
   const place = await page.evaluate(() => {
     const b = document.querySelector(".credibytes-badge");
-    return { parent: b?.parentElement?.className, next: b?.nextElementSibling?.className };
+    return { parent: b?.parentElement?.className, next: b?.nextElementSibling?.className,
+             inset: b?.classList.contains("cb-inset") };
   });
   r.check("Ad Library: badge sits inside the card, just above the ad preview",
           place.parent === "card" && place.next === "preview", JSON.stringify(place));
+  r.check("Ad Library: badge is inset from the card edge", place.inset, JSON.stringify(place));
 
-  for (const open of [false, true]) {
-    if (open) await page.click(".credibytes-badge .cb-toggle");
-    const hit = await page.evaluate(() => {
-      const b = document.querySelector(".credibytes-badge").getBoundingClientRect();
-      window.scrollBy(0, b.top - 20);          // badge now sits under the 60px bar
-      const nb = document.querySelector(".credibytes-badge").getBoundingClientRect();
-      const el = document.elementFromPoint(nb.left + 20, 30);
-      const out = { underBar: nb.top < 60 && nb.bottom > 30, onTop: el?.closest("#filters") ? "filters" : el?.className };
-      window.scrollTo(0, 0);
-      return out;
-    });
-    r.check(`Ad Library: the filter bar stays on top of the ${open ? "opened" : "closed"} badge`,
-            hit.underBar && hit.onTop === "filters", JSON.stringify(hit));
-  }
+  const hit = await page.evaluate(() => {
+    const b = document.querySelector(".credibytes-badge").getBoundingClientRect();
+    window.scrollBy(0, b.top - 20);            // badge now sits under the 60px bar
+    const nb = document.querySelector(".credibytes-badge").getBoundingClientRect();
+    const el = document.elementFromPoint(nb.left + 20, 30);
+    return { underBar: nb.top < 60 && nb.bottom > 30,
+             onTop: el?.closest("#filters") ? "filters" : el?.className };
+  });
+  r.check("Ad Library: the filter bar stays on top of the badge scrolled under it",
+          hit.underBar && hit.onTop === "filters", JSON.stringify(hit));
   await page.close();
 }
 

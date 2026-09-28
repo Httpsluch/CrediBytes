@@ -1,7 +1,7 @@
 # Extension Tests
 
 ![Suites](https://img.shields.io/badge/suites-21-4285F4)
-![Assertions](https://img.shields.io/badge/assertions-443-2e9e4f)
+![Assertions](https://img.shields.io/badge/assertions-444-2e9e4f)
 ![Runner](https://img.shields.io/badge/Playwright-Chromium-45ba4b)
 
 Browser tests that load the **real** content scripts into a Chromium page
@@ -60,7 +60,7 @@ stub is also required: without it `popup.js` loaded twice and threw
 |---|---|---|
 | `ad-detection` | 15 | Advertiser-name extraction in the news feed (no `role="article"`) and in search results; noise rejection; the fuzzy suggestion path, including a generic link-preview headline no longer burying the brand |
 | `ad-library-root` | 11 | Ad Library cards rooted on the Library ID marker; four cards in one grid judged independently; two news-feed regression checks proving that path is untouched |
-| `badge-placement` | 32 | Feed ads rooted on the post (`<article>`, or the `aria-posinset` story 18 levels up) rather than the header row, as a probe of the live feed showed; the badge above the header inside the card, never an item in a row, even when the last-resort root is the row or the name column; no `position`/`z-index`, so the Ad Library's sticky filter bar stays on top; the analysis opening in the flow |
+| `badge-placement` | 33 | Feed ads rooted on the post (`<article>`, or the `aria-posinset` story 18 levels up) rather than the header row, as a probe of the live feed showed; the feed badge at the top of the name column, never an item in the row around it, even when the last-resort root is the row or the column; one badge and one saved scan per ad; the Ad Library badge just above the ad preview; the closed bar claiming no `z-index`, so the sticky filter bar stays on top; the analysis still floating, lifted only while open |
 | `ad-library-caption` | 7 | Destination read from displayed caption text when a preview exposes no outbound link; provenance disclosed on the badge |
 | `link-capture` | 9 | `data-lynx-uri` extraction, redirect unwrapping through four hosts, link ranking by type rather than document order |
 
