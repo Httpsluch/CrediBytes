@@ -126,6 +126,63 @@ for (const [label, html, expectName] of [
   await page.close();
 }
 
+// A link to a declared channel makes an ad a lending ad whatever its wording.
+//
+// Live InvestEd carousel: every lending word it had ("Educ4All Lending Inc.",
+// "#StudentLoansPH") sat behind "See more", which Facebook does not render
+// until clicked, so the keyword checks found nothing and the ad was dropped
+// before its link — app.invested.ph, under the declared invested.ph — was read.
+{
+  const dest = "https://app.invested.ph/landing/application?utm_source=facebook";
+  const card = `<div><div>Repayment Period</div><a aria-label="Apply now" role="link"
+    href="https://l.facebook.com/l.php?u=${encodeURIComponent(dest)}&h=x"><span>Apply now</span></a></div>`;
+  const page = await browser.newPage();
+  await page.setContent(`<!doctype html><body><article>
+    <div><a role="link" href="https://www.facebook.com/InvestEdPH"><strong><span>InvestEd Philippines</span></strong></a>
+      <a aria-label="Sponsored" href="/ads/about/?x" role="link"><span>Sponsored</span></a></div>
+    <div data-ad-preview="message">Tara, usapang REPAYMENT tayo! So, here are all of the things you need
+      to know about InvestEd's repayment period, late fees, and on-time payments... <div role="button">See more</div></div>
+    ${card}${card}
+  </article>
+  <article>
+    <div><a role="link" href="https://www.facebook.com/GrabPH"><strong><span>Grab</span></strong></a>
+      <a aria-label="Sponsored" href="/ads/about/?y" role="link"><span>Sponsored</span></a></div>
+    <div>Craving something? Get your favourites delivered, free delivery on your first order.</div>
+    <a href="https://l.facebook.com/l.php?u=${encodeURIComponent("https://www.grab.com/ph/food/")}&h=y">Order now</a>
+  </article></body>`);
+  await page.addScriptTag({ content: CHROME_SHIM });
+  await page.addScriptTag({ content: await read("i18n.js") });
+  await page.addScriptTag({ content: await read("verdict-view.js") });
+  await page.addScriptTag({ content: await read("sec_reference.js") });
+  await page.addScriptTag({ content: await read("matcher.js") });
+  await page.addScriptTag({ content: await read("content.js") });
+  await page.waitForTimeout(3400);
+  const saved = await page.evaluate(() =>
+    window.__sent.filter(m => m.type === "SAVE_SCAN").map(m => m.payload));
+  const inv = saved.find(p => p.advertiserName === "InvestEd Philippines");
+  check("declared destination: an ad with no lending words is still scanned", !!inv,
+        saved.map(p => p.advertiserName).join(", ") || "(none)");
+  check("declared destination: and verifies on that link",
+        inv?.label === "SEC Verified" && inv?.destHost === "app.invested.ph",
+        `${inv?.label} / ${inv?.destHost}`);
+  // Grab declares only its lending page, grab.com/ph/grabfinance-quick-cash/.
+  check("declared destination: a GrabFood ad on grab.com is not treated as lending",
+        !saved.some(p => p.advertiserName === "Grab"), saved.map(p => p.advertiserName).join(", "));
+
+  const scoped = await page.evaluate(() => {
+    const M = window.CrediBytesMatcher;
+    return {
+      lendingPath: M.isDeclaredDestination("https://www.grab.com/ph/grabfinance-quick-cash/apply"),
+      store: M.isDeclaredDestination("https://play.google.com/store/apps/details?id=com.juanhand.fast.cash.peso.loan.app"),
+      unknownStore: M.isDeclaredDestination("https://play.google.com/store/apps/details?id=com.example.notinthesecregistry"),
+    };
+  });
+  check("declared destination: Grab's declared lending path does count", scoped.lendingPath, "");
+  check("declared destination: a declared Play package counts", scoped.store, "");
+  check("declared destination: an undeclared package does not", !scoped.unknownStore, "");
+  await page.close();
+}
+
 // Popup height regression
 {
   const page = await browser.newPage({ viewport: { width: 400, height: 700 } });

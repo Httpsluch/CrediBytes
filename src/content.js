@@ -245,6 +245,12 @@
     const M = window.CrediBytesMatcher;
     if (M?.mentionsKnownRegistrant?.(`${advertiserName} ${claimedAppName}`)) return true;
 
+    // So is a link to a channel a registrant declared to the SEC — the one
+    // signal here that is evidence rather than wording. An InvestEd carousel
+    // was dropped because every lending word it had sat behind "See more";
+    // its link went to app.invested.ph, under the declared invested.ph.
+    if (M?.isDeclaredDestination?.(landingUrl)) return true;
+
     if (looksNonOLA(advertiserName, claimedAppName)) return false;
 
     const identity = `${advertiserName} ${claimedAppName}`.toLowerCase();

@@ -368,6 +368,46 @@
     return false;
   }
 
+  // Does this destination belong to a channel some registrant declared? Used to
+  // decide whether an ad is worth scanning at all — matchUrl() still decides
+  // the verdict.
+  //
+  // Keywords alone missed an InvestEd carousel: everything that said "lending"
+  // ("Educ4All Lending Inc.", "#StudentLoansPH") sat behind "See more", which
+  // Facebook does not render until clicked, so the ad was dropped before its
+  // link — app.invested.ph, under the declared invested.ph — was ever checked.
+  // A link to a declared lending channel is the strongest evidence there is
+  // that an ad is a lending ad, and unlike wording it cannot be truncated.
+  //
+  // A website declared WITH a path counts only within that path. Grab declares
+  // grab.com/ph/grabfinance-quick-cash/; every GrabFood ad also links to
+  // grab.com, and none of those are lending ads.
+  function isDeclaredDestination(url) {
+    const pkg = playPackageId(url);
+    if (pkg) return playIndex.has(pkg);
+    const apple = appleAppId(url);
+    if (apple) return appleIndex.has(apple);
+    const host = normHost(url);
+    if (!host) return false;
+    const parts = host.split(".");
+    for (let i = 0; i < parts.length - 1; i++) {
+      const ref = domainIndex.get(parts.slice(i).join("."));
+      if (ref) return withinDeclaredPath(url, ref.websiteUrl);
+    }
+    return false;
+  }
+
+  function withinDeclaredPath(url, declared) {
+    try {
+      const want = new URL(declared).pathname.replace(/\/+$/, "").toLowerCase();
+      if (!want) return true;
+      const have = new URL(url).pathname.toLowerCase();
+      return have === want || have.startsWith(want + "/");
+    } catch {
+      return false;
+    }
+  }
+
   // A stored scan keeps only the SEC number, not the whole record, so the
   // widget's detail window looks the registrant back up to show every declared
   // channel. Linear over ~187 records and called once per card open.
@@ -597,7 +637,8 @@
   }
 
   window.CrediBytesMatcher = { matchUrl, playPackageId, appleAppId, normHost, isStoreUrl, isSocialUrl,
-                               mentionsKnownRegistrant, lookupRevoked, revokedWording,
+                               mentionsKnownRegistrant, isDeclaredDestination,
+                               lookupRevoked, revokedWording,
                                revokedCount: revokedIndex.size , findBySec};
 
 })();
