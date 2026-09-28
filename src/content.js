@@ -386,15 +386,22 @@
     }
     // No post container at all — fall back to the nearest ancestor that looks
     // like a whole ad. This is the path that stopped at the header row; it stays
-    // as a last resort, and badgeSlot() keeps the badge out of that row even
-    // when it is taken.
+    // as a last resort, and the root is recorded as a guess so feedSlot() may
+    // look just past it for the header row.
     el = start;
     for (let i = 0; i < 14 && el && el !== document.body; i++) {
-      if (isPlausibleAdRoot(el)) return el;
+      if (isPlausibleAdRoot(el)) {
+        guessedRoots.add(el);
+        return el;
+      }
       el = el.parentElement;
     }
     return null;
   }
+
+  // Roots from the last-resort path above, which can be part of the header
+  // (the row, or the name column inside it) rather than the whole post.
+  const guessedRoots = new WeakSet();
 
   // Remembers which "Sponsored" label produced each ad root, so the advertiser
   // name can be looked up relative to it.
@@ -743,17 +750,17 @@
   }
 
   // ── Where the badge goes ─────────────────────────────────────────────────────
-  // It used to be the root's first child, which put it wherever the root
-  // happened to be. In the news feed that was part of the header: the name
-  // column when the advertiser's name was long enough to clear 40 characters —
-  // above the name, beside the avatar, which read correctly — or, for a short
-  // name, the row around that column, where the badge became one more flex item
-  // beside the avatar and squeezed the name onto two lines.
+  // Intended in the feed: full width, inside the post, above its header — the
+  // avatar and the name. The root's first child gave that only when the root
+  // happened to be a full-width block. When it was part of the header, the
+  // badge landed in the name column (pushing the name onto the next line,
+  // beside the avatar) or in the row around it (squeezed to a sliver beside
+  // the avatar). Both were reported.
   //
-  // With the root now the whole post (see AD_ROOT_SELECTOR), "first child" no
-  // longer means either of those, so both surfaces aim at a slot explicitly:
-  //   - news feed: the top of the header's own column (feedSlot) — the layout
-  //     that worked, now for every ad rather than only long names;
+  // So each surface aims at a slot explicitly:
+  //   - news feed: directly above the header row (feedSlot), found by
+  //     structure — the first row above the name column — not by width, which
+  //     is what made an earlier attempt land in the name column on wider cards;
   //   - Ad Library: just above the ad preview, below the card's Library ID
   //     block (badgeSlot).
 
@@ -768,16 +775,34 @@
   }
 
   function feedSlot(adEl, marker, nameEl) {
-    if (marker && adEl.contains(marker)) {
-      const header = headerOf(adEl, marker, nameEl);
-      if (header !== adEl && header !== marker && stacksVertically(header)) {
-        return { parent: header, before: header.firstChild };
-      }
+    const top = { parent: adEl, before: adEl.firstChild };
+    // Without the name there is no telling the header row from the row that
+    // holds "Sponsored · (globe)" inside the name column, so do not guess.
+    if (!marker || !nameEl || !adEl.contains(marker) || !adEl.contains(nameEl)) return top;
+
+    const header = headerOf(adEl, marker, nameEl);
+    const guessed = guessedRoots.has(adEl);
+
+    // The header row: the first row above the name column (avatar | name |
+    // menu). Searched within the post; past it only for a guessed root, which
+    // may be the name column or the row itself, and then only a few levels.
+    let row = null;
+    let beyond = 0;
+    for (let a = header; a && a !== document.body; a = a.parentElement) {
+      if (a !== adEl && !adEl.contains(a) && (!guessed || ++beyond > 3)) break;
+      if (a !== header && isRow(a)) { row = a; break; }
     }
-    // No usable column. The root's top, as before — unless the root is itself a
-    // row, the one shape that squeezed the name.
-    return isRow(adEl) ? badgeSlot(adEl, marker, nameEl)
-                       : { parent: adEl, before: adEl.firstChild };
+    // No row: the header block itself is the thing to sit above.
+    const above = row || (header === adEl ? null : header);
+    if (!above) return top;
+
+    // The nearest container above it that stacks vertically, so the badge takes
+    // the full width instead of becoming a flex item beside the avatar.
+    for (let child = above, i = 0; child.parentElement && child.parentElement !== document.body && i < 6;
+         child = child.parentElement, i++) {
+      if (stacksVertically(child.parentElement)) return { parent: child.parentElement, before: child };
+    }
+    return top;
   }
 
   function isRow(el) {

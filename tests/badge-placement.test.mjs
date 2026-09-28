@@ -18,11 +18,12 @@
  * to part of the header, and the ad was judged on its header alone: an InvestEd
  * ad was dropped outright, a Salmon ad read Unverified off a facebook.com link.
  *
- * Where that root was the name column (#5, long names) the badge sat at the top
- * of it — above the name, beside the avatar — and that layout was right. Where
- * it was the row (#7, short names) the badge became a flex item beside the name
- * and squeezed it. The badge now goes to the top of the name column for every
- * ad, while the root is the whole post.
+ * The badge belongs full width, inside the post, above its header (avatar and
+ * name). With a header root it instead landed in the name column (#5 — the name
+ * pushed onto the next line beside the avatar) or in the row (#7 — squeezed to
+ * a sliver). An earlier fix picked its slot by width and landed in the name
+ * column on wider cards; the slot is now found by structure, so it is checked
+ * at two card widths.
  *
  * Destinations in the fixtures (invested.ph, moto.salmon.ph) are assumed for
  * the test — they are declared channels of Educ4All Lending and Sunprime
@@ -77,12 +78,12 @@ const content = (name, slug, body, dest) => `
 
 // `withArticle` false drops the <article> so only [aria-posinset] (18 levels
 // up) remains — the shape to expect if another account's markup lacks it.
-const story = (pos, ad, withArticle = true) => {
+const story = (pos, ad, withArticle = true, width = 629) => {
   const inner = `<div><div>${content(...ad)}</div></div>`;
   return `
   <div class="story" role="article" aria-posinset="${pos}">
     <div style="display:flex;flex-direction:column"><div>
-      <div style="display:flex;flex-direction:row"><div class="box" style="border-radius:8px;width:629px"><div>
+      <div style="display:flex;flex-direction:row"><div class="box" style="border-radius:8px;width:${width}px"><div>
         ${withArticle ? `<article class="post">${inner}</article>` : `<div class="post">${inner}</div>`}
       </div></div></div>
     </div></div>
@@ -96,8 +97,8 @@ const SALMON = ["Salmon Philippines", "SalmonPH",
   "Choose your ride on Salmon Moto Marketplace, apply for Salmon Moto Loan.",
   "https://moto.salmon.ph/"];
 
-const feedPage = (html) => `<!doctype html><body style="margin:0">
-  <div role="feed" style="width:629px">${html}</div></body>`;
+const feedPage = (html, width = 629) => `<!doctype html><body style="margin:0">
+  <div role="feed" style="width:${width}px">${html}</div></body>`;
 
 // Everything the assertions need about one story's badge.
 const inspect = (storySel) => {
@@ -108,16 +109,18 @@ const inspect = (storySel) => {
     badgeParent: badge?.parentElement?.className || null,
     badgeNext: badge?.nextElementSibling?.className || null,
     insideCard: !!badge?.closest(".box"),
+    inNameColumn: !!badge?.closest(".namecol-wrap"),
     badgeW: badge ? badge.getBoundingClientRect().width : 0,
-    colW: s.querySelector(".namecol").getBoundingClientRect().width,
+    hdrW: s.querySelector(".hdr").getBoundingClientRect().width,
     nameH: s.querySelector(".adv").getBoundingClientRect().height,
   };
 };
 
-// 1. The feed as measured.
-{
-  const page = await browser.newPage();
-  await page.setContent(feedPage(story(1, INVESTED) + story(2, SALMON)));
+// 1. The feed as measured — and on a wider card, where the width-based first
+//    attempt put the badge in the name column instead.
+for (const width of [629, 1000]) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await page.setContent(feedPage(story(1, INVESTED, true, width) + story(2, SALMON, true, width), width));
   const nameBefore = await page.evaluate(() =>
     document.querySelector(".adv").getBoundingClientRect().height);
   await load(page);
@@ -126,28 +129,32 @@ const inspect = (storySel) => {
   const inv = await page.evaluate(inspect, ".story[aria-posinset='1']");
   const sal = await page.evaluate(inspect, ".story[aria-posinset='2']");
 
-  const byName = (n) => saved.find(p => p.advertiserName === n);
-  r.check("InvestEd is scanned now that the body is in scope",
-          !!byName("InvestEd Philippines"), saved.map(p => p.advertiserName).join(", "));
-  r.check("InvestEd verifies through its declared website",
-          byName("InvestEd Philippines")?.label === "SEC Verified",
-          JSON.stringify(byName("InvestEd Philippines")?.label));
-  r.check("Salmon is judged on its call to action, not a facebook.com link",
-          byName("Salmon Philippines")?.destHost === "moto.salmon.ph",
-          `dest=${byName("Salmon Philippines")?.destHost}`);
-  r.check("Salmon verifies", byName("Salmon Philippines")?.label === "SEC Verified",
-          byName("Salmon Philippines")?.label);
+  if (width === 629) {
+    const byName = (n) => saved.find(p => p.advertiserName === n);
+    r.check("InvestEd is scanned now that the body is in scope",
+            !!byName("InvestEd Philippines"), saved.map(p => p.advertiserName).join(", "));
+    r.check("InvestEd verifies through its declared website",
+            byName("InvestEd Philippines")?.label === "SEC Verified",
+            JSON.stringify(byName("InvestEd Philippines")?.label));
+    r.check("Salmon is judged on its call to action, not a facebook.com link",
+            byName("Salmon Philippines")?.destHost === "moto.salmon.ph",
+            `dest=${byName("Salmon Philippines")?.destHost}`);
+    r.check("Salmon verifies", byName("Salmon Philippines")?.label === "SEC Verified",
+            byName("Salmon Philippines")?.label);
+  }
 
   for (const [label, m] of [["InvestEd", inv], ["Salmon", sal]]) {
-    r.check(`${label}: the root is the post, not the header row`, m.root === "post", `root=${m.root}`);
-    r.check(`${label}: badge sits at the top of the name column, above the name`,
-            m.badgeParent === "namecol" && m.badgeNext === "namerow",
+    const at = `${label} @${width}px`;
+    r.check(`${at}: the root is the post, not the header row`, m.root === "post", `root=${m.root}`);
+    r.check(`${at}: badge sits directly above the header row (avatar | name)`,
+            m.badgeParent === "hdr-wrap" && m.badgeNext === "hdr",
             `parent=${m.badgeParent} next=${m.badgeNext}`);
-    r.check(`${label}: badge is inside the card`, m.insideCard, "");
-    r.check(`${label}: badge fills the column rather than being squeezed`,
-            m.badgeW >= m.colW - 1, `badge=${Math.round(m.badgeW)} column=${Math.round(m.colW)}`);
+    r.check(`${at}: badge is not in the name column`, !m.inNameColumn, "");
+    r.check(`${at}: badge is inside the card`, m.insideCard, "");
+    r.check(`${at}: badge spans the header's full width`,
+            m.badgeW >= m.hdrW - 1, `badge=${Math.round(m.badgeW)} header=${Math.round(m.hdrW)}`);
   }
-  r.check("the advertiser name does not wrap",
+  r.check(`@${width}px: the advertiser name does not wrap`,
           Math.abs(inv.nameH - nameBefore) < 1, `${nameBefore} -> ${inv.nameH}`);
   await page.close();
 }
@@ -164,14 +171,14 @@ const inspect = (storySel) => {
   }));
   r.check("without <article>, the feed story itself is the root", m.root === "story", `root=${m.root}`);
   r.check("and the ad is still judged on its whole content", m.label === "SEC Verified", m.label);
-  r.check("and the badge still sits in the name column", m.parent === "namecol", `parent=${m.parent}`);
+  r.check("and the badge still sits above the header row", m.parent === "hdr-wrap", `parent=${m.parent}`);
   await page.close();
 }
 
 // 3. No container at all, so the last resort roots the ad on part of its own
-//    header: the row (as measured live for short names — the case that broke),
-//    or the name column once the name alone clears 40 characters (the case that
-//    always looked right). Both must now give the name-column layout.
+//    header: the row (as measured live for short names), or the name column
+//    once the name alone clears 40 characters. The badge must still land above
+//    the header row, full width — never in the row or the column.
 for (const [what, ad, expectRoot] of [
   ["the header row", SALMON, "hdr"],
   ["the name column (long advertiser name)",
@@ -200,8 +207,8 @@ for (const [what, ad, expectRoot] of [
   // rooted the same ad again.
   r.check(`rooted on ${what}: one badge and one saved scan, not two`,
           m.badges === 1 && m.saves === 1, `badges=${m.badges} saves=${m.saves}`);
-  r.check(`rooted on ${what}: the badge is at the top of the name column, not a row item`,
-          m.parent === "namecol" && m.next === "namerow", `parent=${m.parent} next=${m.next}`);
+  r.check(`rooted on ${what}: the badge sits above the header row, not inside it`,
+          m.parent === "hdr-wrap" && m.next === "hdr", `parent=${m.parent} next=${m.next}`);
   r.check(`rooted on ${what}: the advertiser name keeps its line`,
           Math.abs(m.nameH - before) < 1, `${before} -> ${m.nameH}`);
   await page.close();
