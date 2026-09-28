@@ -1,7 +1,7 @@
 # Extension Tests
 
-![Suites](https://img.shields.io/badge/suites-23-4285F4)
-![Assertions](https://img.shields.io/badge/assertions-502-2e9e4f)
+![Suites](https://img.shields.io/badge/suites-24-4285F4)
+![Assertions](https://img.shields.io/badge/assertions-505-2e9e4f)
 ![Runner](https://img.shields.io/badge/Playwright-Chromium-45ba4b)
 
 Browser tests that load the **real** content scripts into a Chromium page
@@ -64,6 +64,7 @@ stub is also required: without it `popup.js` loaded twice and threw
 | `badge-placement` | 52 | Feed ads rooted on the post (`<article>`, or the `aria-posinset` story 18 levels up) rather than the header row, as a probe of the live feed showed; the feed badge full width directly above the header row (avatar and name), found by structure and checked at two card widths, never in the name column or the row, even when the last-resort root is one of them; one badge and one saved scan per ad; the Ad Library badge just above the ad preview; the closed bar claiming no `z-index`, so the sticky filter bar stays on top; the analysis still floating, lifted only while open; in the Ad Library, closing when the page scrolls the card up toward the filter bar but not when the analysis itself is scrolled, with overscroll contained |
 | `ad-library-caption` | 7 | Destination read from displayed caption text when a preview exposes no outbound link; provenance disclosed on the badge |
 | `link-services` | 23 | Links through a link service (OneLink, Adjust, Firebase, bit.ly): followed via the backend to where they lead and verified there; judged as shown, and said so, when the backend refuses or never answers; a destination named in the link read with no request; only lending ads' link-service links ever sent, without `fbclid` |
+| `scan-timing` | 3 | A page that never settles still gets its badges within about a second (the scan waits for quiet, but at most 1 s); a sleeping backend no longer holds the badge back, and the scan is still stored with the local Stage 1 score |
 | `link-capture` | 9 | `data-lynx-uri` extraction, redirect unwrapping through four hosts, link ranking by type rather than document order |
 
 ### Verdicts and data

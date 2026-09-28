@@ -219,7 +219,7 @@ normally.
 ## Testing
 
 ```bash
-node tests/run-all.mjs        # 23 suites, 502 assertions
+node tests/run-all.mjs        # 24 suites, 505 assertions
 node tests/stage3.test.mjs    # a single suite
 ```
 

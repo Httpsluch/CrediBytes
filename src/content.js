@@ -953,7 +953,7 @@
 
   // ── Badge injection (createElement — no innerHTML) ───────────────────────────
 
-  function injectBadge(adEl, matchResult, stage1Result, advertiserName) {
+  function injectBadge(adEl, matchResult, advertiserName) {
     adBadges.get(adEl)?.remove();
     adEl.querySelector("." + BADGE_CLASS)?.remove();
 
@@ -964,9 +964,6 @@
     const landingHost    = window.CrediBytesMatcher.normHost(matchResult._adUrl || "");
     const followed       = matchResult._followed || null;
     const via            = matchResult._via || "";
-    const riskDesc   = stage1Result?.risk_desc   ?? null;
-    const isApp      = stage1Result?.is_app      ?? null;
-    const prob       = stage1Result?.probability ?? null;
 
     const { cls: badgeClass, icon, label, bar } = verdictOf(legitimacy, status, store);
 
@@ -1999,6 +1996,17 @@
     // guess and must not be treated as a verified website.
     const hasOfficialWebsite = matchResult.ref?.websiteUrl ? 1 : 0;
 
+    // The badge first. It shows the verdict, which is settled here; the Stage 1
+    // score is not on the badge (a percentage beside a verdict reads as that
+    // verdict's confidence, and it never was one). It used to wait on Stage 1
+    // regardless — up to BACKEND_WAIT_MS per ad when the backend was asleep.
+    //
+    // Badge mode only: the floating list and the popup render stored scans, and
+    // the scan is stored once Stage 1 has answered, below.
+    if (settings.displayResult === "badge") {
+      injectBadge(adEl, matchResult, advertiserName);
+    }
+
     const stage1Result = await requestStage1Prediction(
       advertiserName, claimedAppName, hasOfficialWebsite
     );
@@ -2021,13 +2029,7 @@
       saveScan(matchResult, stage1Result, advertiserName, landingUrl);
     }
 
-    // Badge is the on-page surface for both "badge" and "sidepanel" modes;
-    // sidepanel additionally mirrors the history in Chrome's panel.
-    if (settings.displayResult === "badge") {
-      injectBadge(adEl, matchResult, stage1Result, advertiserName);
-    } else if (settings.displayResult === "floating") {
-      updateFloatingContent();
-    }
+    if (settings.displayResult === "floating") updateFloatingContent();
   }
 
   // Single place that builds the SAVE_SCAN payload. It used to be duplicated
@@ -2163,9 +2165,32 @@
   // (not `const` inside init) precisely because that guard has to reach them.
   let observer = null;
   let debounceTimer;
+
+  // A scan waits for the page to settle for SCAN_QUIET_MS, so a burst of
+  // insertions costs one scan rather than dozens — but never longer than
+  // SCAN_MAX_WAIT_MS from the first change it is waiting on.
+  //
+  // It used to wait for quiet alone, restarting the timer on every change. On a
+  // page that never goes quiet the scan never ran: measured, a page changing
+  // every 200 ms produced no badge at all within 12 s. One account took ~30 s
+  // to badge its ads with the backend awake — Facebook's feed does not sit
+  // still (autoplaying video, counters, and on that account a label rendered
+  // through a closed shadow root), so ads were badged only in the lulls.
+  const SCAN_QUIET_MS = 300;
+  const SCAN_MAX_WAIT_MS = 1000;
+  let scanPendingSince = 0;
+
   function debouncedScan() {
+    const now = Date.now();
+    if (!scanPendingSince) scanPendingSince = now;
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(scanPage, 300);
+    const wait = Math.min(SCAN_QUIET_MS, scanPendingSince + SCAN_MAX_WAIT_MS - now);
+    debounceTimer = setTimeout(runPendingScan, Math.max(0, wait));
+  }
+
+  function runPendingScan() {
+    scanPendingSince = 0;
+    scanPage();
   }
 
   // ── Initialise ───────────────────────────────────────────────────────────────
