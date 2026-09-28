@@ -413,6 +413,14 @@
   // name can be looked up relative to it.
   const adMarkers = new WeakMap();
 
+  // The ad labels Facebook uses, matched whole. "May Sponsor" is the Filipino
+  // interface; the /ads/about link below covers any language not listed here.
+  const AD_LABELS = new Set(["sponsored", "ad", "may sponsor"]);
+  const isAdLabel = (s) => AD_LABELS.has(String(s || "").replace(/\s+/g, " ").trim().toLowerCase());
+
+  // Relative on the page; absolute in case a surface renders it that way.
+  const AD_ABOUT_LINK = 'a[href^="/ads/about"], a[href*="facebook.com/ads/about"]';
+
   function findAdElements() {
     const candidates = new Set();
 
@@ -430,12 +438,47 @@
       }
     };
 
-    document.querySelectorAll('[aria-label="Sponsored"]').forEach(consider);
+    // Facebook serves more than one ad label, by account. Measured 2026-09-29:
+    //
+    //   one account   <a aria-label="Sponsored" href="/ads/about/…"><span>Sponsored</span></a>
+    //   another       <a href="/ads/about/…"> … <span aria-labelledby="_r_…">
+    //                   <span>#shadow-root (closed) "Ad"</span></span></a>
+    //
+    // The second has no "Sponsored" anywhere and its visible word sits in a
+    // closed shadow root, so every check below the first two found nothing and
+    // no ad on that account was ever detected. Neither signal needs the shadow
+    // root opened: the link is ordinary markup, and the element aria-labelledby
+    // names is in the page with the text "Ad" — what a screen reader announces.
+
+    // The "About this ad" link. Checked first because it is the one signal that
+    // does not depend on the label's wording or language, and because it sits
+    // closest to the advertiser's name, which getAdvertiserName() searches for
+    // outward from the marker. Its own text is the short label ("Sponsored", or
+    // empty when the label is in a shadow root) — which, with the dialog/menu
+    // exclusion, keeps the "Why am I seeing this ad?" item from counting.
+    document.querySelectorAll(AD_ABOUT_LINK).forEach(a => {
+      if (a.textContent.trim().length > 20) return;
+      if (a.closest('[role="dialog"], [role="menu"]')) return;
+      consider(a);
+    });
+
+    document.querySelectorAll("[aria-label]").forEach(el => {
+      if (isAdLabel(el.getAttribute("aria-label"))) consider(el);
+    });
+
+    document.querySelectorAll("[aria-labelledby]").forEach(el => {
+      const label = el.getAttribute("aria-labelledby").split(/\s+/)
+        .map(id => document.getElementById(id)?.textContent || "").join(" ");
+      if (isAdLabel(label)) consider(el);
+    });
 
     document.querySelectorAll("span, a").forEach(el => {
       const t = el.textContent.trim();
-      // Facebook localises this and sometimes splits it across nodes.
-      if (t === "Sponsored" || t === "Sponsored ·" || t === "Sponsored·") consider(el);
+      // Facebook localises this and sometimes splits it across nodes. "Ad" is
+      // deliberately not matched as bare text — too common a word; it counts
+      // only as a label (above).
+      if (t === "Sponsored" || t === "Sponsored ·" || t === "Sponsored·" ||
+          t === "May Sponsor") consider(el);
     });
 
     // Drop candidates that merely contain another candidate, so a single ad
