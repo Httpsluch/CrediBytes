@@ -264,9 +264,19 @@ scan storage along with it.
 - **`background.js` is the sole writer** to `chrome.storage.local`, serialised
   through a single promise chain. Concurrent scans previously raced, and a
   measurement found **3 of 25 writes surviving**.
-- **Nothing is transmitted automatically.** Stage 1 may send a company name and
-  platform name to the backend as a fallback; Stage 3 fetches a store page only
-  on an explicit click.
+- **Two things are transmitted automatically, both only for ads already judged
+  to be lending ads, both to the project's own backend:**
+  - the advertiser name and app title, to `/predict` for the Stage 1 profile
+    score — the deployed model answers first, and the bundled copy fills in if
+    it has not answered within 2.5 s;
+  - a link that goes through a link service (AppsFlyer OneLink, Adjust, bit.ly,
+    …), without `fbclid`, to `/resolve`, which reads where it redirects and never
+    loads the destination. 36 of the 2,164 collected appearances would have been
+    sent; links that name their destination (Firebase `link=`) are read in the
+    page instead.
+
+  Neither carries a user identifier, and the backend logs neither.
+- **Stage 3 fetches a store page only on an explicit click.**
 - **Bug reports carry no browsing data** — extension version, browser, operating
   system, display settings and scan count only. Never the active tab URL, which
   on the Ad Library would contain the user's search terms.
@@ -375,8 +385,11 @@ that decides whether an advertisement is scanned at all.
 const BACKEND_URL = 'https://credibytes-backend.onrender.com'
 ```
 
-Optional. Stage 1 evaluates locally; the backend serves as a fallback and is
-warmed by a rate-limited request when a Facebook tab loads.
+Serves Stage 1 (`/predict`, asked first; the bundled model fills in after 2.5 s)
+and follows link-service links (`/resolve`; without it those ads are judged on
+the link as shown, with a note saying so). It is warmed by a rate-limited
+request when a Facebook tab loads, because a Render instance asleep past its
+free-tier idle limit takes 30–60 s to wake.
 
 ---
 
