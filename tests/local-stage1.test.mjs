@@ -1,11 +1,11 @@
 /**
- * The bundled Stage 1 model — the safety net behind the backend.
+ * The bundled Stage 1 model — the only Stage 1 path.
  *
- * The backend is preferred (see backend-precedence.test.mjs) so the deployed
- * service receives real traffic. This suite covers the model itself: that it
- * loads, predicts deterministically, returns the backend's response shape, and
- * takes over whenever the backend does not answer — so a Render cold start can
- * never strip the profile score off a badge.
+ * It used to be the safety net behind the backend; the extension no longer
+ * asks the backend at all (see stage1-in-browser.test.mjs). This suite covers
+ * the model itself: that it loads, predicts deterministically, returns the
+ * backend's response shape, and scores an ad even when something that looks
+ * like a backend never answers.
  *
  * Numerical equivalence with the served model is asserted separately and far
  * more strictly by CrediBytes-Backend/verify_export.py, which diffs against
@@ -115,14 +115,14 @@ const browser = await chromium.launch({ headless: true });
   });
 
   r.check("ad still badged with backend unreachable", res.badged, "");
-  // Backend-first by design: the deployed service must receive the traffic so
-  // its logs reflect real usage. The local model is the safety net, not the
-  // default. (This assertion was inverted when the order was local-first.)
-  r.check("backend is asked first", res.predictSent === 1,
+  // In-browser only: the advertiser's name is never sent anywhere for Stage 1.
+  // (This assertion has flipped twice: local-first, then backend-first, now
+  // local-only — see stage1-in-browser.test.mjs.)
+  r.check("the backend is never asked", res.predictSent === 0,
           `PREDICT messages=${res.predictSent}`);
   r.check("content script makes no direct network call", networkCalls === 0,
           `calls=${networkCalls}`);
-  r.check("local model fills in when the backend never answers",
+  r.check("the local model scores the ad",
           typeof res.prob === "number" && !!res.riskDesc,
           `prob=${res.prob} desc=${res.riskDesc}`);
   // The score is no longer DISPLAYED — a percentage beside a verdict reads as
@@ -136,7 +136,7 @@ const browser = await chromium.launch({ headless: true });
   await page.close();
 }
 
-// ── 3. Backend fallback when the model is absent ────────────────────────────
+// ── 3. No fallback when the model is absent ─────────────────────────────────
 {
   const page = await browser.newPage();
   await page.setContent(`<!doctype html><body>${AD}</body>`);
@@ -155,10 +155,10 @@ const browser = await chromium.launch({ headless: true });
     predictSent: window.__sent.filter(m => m.type === "PREDICT").length,
   }));
   r.check("isReady() false when the model is missing", res.ready === false, "");
-  // With no bundled model there is no safety net, so the backend is the only
-  // source — it is still asked exactly once.
-  r.check("backend is the sole source in that case",
-          res.predictSent === 1, `PREDICT messages=${res.predictSent}`);
+  // The backend is not a fallback any more: with no bundled model the score is
+  // simply unknown, and nothing is sent to find one.
+  r.check("nothing is sent to the backend in that case either",
+          res.predictSent === 0, `PREDICT messages=${res.predictSent}`);
   await page.close();
 }
 

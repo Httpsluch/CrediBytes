@@ -22,8 +22,11 @@
  * get_risk_label(). CrediBytes-Backend/verify_export.py asserts both against the
  * training set.
  *
- * The backend remains the fallback when the model fails to load, and stays the
- * deployment target for anything that genuinely needs a server.
+ * It is the ONLY Stage 1 path. The extension used to ask the backend first so
+ * the deployed service logged real traffic, with this as the fallback; since
+ * the two are identical, that round trip changed no score and only sent each
+ * advertiser's name off the user's machine. The backend's /predict stays as the
+ * reference verify_export.py checks this against.
  */
 (function () {
   "use strict";
@@ -124,8 +127,8 @@
   }
 
   // Mirrors get_risk_label() in main.py. These strings must match the backend's
-  // character for character — a user switching between the local and fallback
-  // paths must not see the badge reword itself. verify_export.py diffs them.
+  // character for character, so the reference and the shipped model cannot
+  // describe the same score differently. verify_export.py diffs them.
   function riskLabel(probability) {
     const pct = Math.round(probability * 100);
     if (probability >= 0.70) {
@@ -273,7 +276,7 @@
       risk_label:  label,
       risk_desc:   desc,
       company:     String(companyName || ""),
-      source:      "local",     // "remote" when the backend answered instead
+      source:      "local",     // kept for scans stored when "remote" was possible
       // Why the score is what it is — see explain(). The backend does not
       // return this, so content.js computes it locally either way.
       contributions: explain(companyName, platformName, hasOfficialWebsite),

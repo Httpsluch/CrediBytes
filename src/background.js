@@ -2,9 +2,11 @@
  * background.js — CrediBytes
  * Manifest V3 service worker.
  *
- * Handles ALL network requests to the FastAPI backend.
- * Content scripts cannot fetch external origins due to Facebook's
- * strict Content Security Policy — service workers are exempt.
+ * Handles ALL network requests: the backend's /resolve (where a link-service
+ * link leads) and, on a user's click, store listings for Stage 3. Content
+ * scripts cannot fetch external origins due to Facebook's strict Content
+ * Security Policy — service workers are exempt. Stage 1 makes no request at
+ * all: it runs in the page.
  *
  * Also owns chrome.storage writes for scan history to prevent
  * race conditions with content.js.
@@ -203,10 +205,11 @@ async function appendScan(payload) {
   });
 }
 
-// ── Keeping the fallback backend warm ───────────────────────────────────────
-// Stage 1 normally runs locally (see stage1.js), so the backend is only the
-// fallback. But Render's free tier spins down after ~15 minutes idle, and a
-// cold start costs 30-60s — the fallback would be useless exactly when needed.
+// ── Keeping the backend warm ────────────────────────────────────────────────
+// Stage 1 runs in the page (see stage1.js); the backend is needed only to
+// follow link-service links (/resolve). Render's free tier spins down after ~15
+// minutes idle, and a cold start costs 30-60s — longer than an ad waits for a
+// link to be followed, so a sleeping instance means an unfollowed link.
 //
 // A cheap GET on the health endpoint when the user lands on Facebook wakes it
 // in the background, so it is usually ready before any ad is scanned. Rate
@@ -216,7 +219,7 @@ async function appendScan(payload) {
 const WARM_INTERVAL_MS = 10 * 60 * 1000;
 let lastWarmAt = 0;
 
-// `force` bypasses the interval. A prediction that just timed out is direct
+// `force` bypasses the interval. A link lookup that just timed out is direct
 // evidence the instance is asleep, so throttling that particular wake-up would
 // defeat the point — the rate limit exists to stop idle polling, not to block
 // a request we know is needed.
@@ -227,7 +230,7 @@ async function warmBackend(force = false) {
   try {
     await fetch(`${BACKEND_URL}/`, { method: "GET", cache: "no-store" });
   } catch (_e) {
-    // Offline or still spinning up — the local model covers Stage 1 anyway.
+    // Offline or still spinning up. Nothing waits on this request itself.
   }
 }
 
@@ -378,13 +381,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // ── Stage 1: ML prediction via FastAPI backend ──────────────────────────
-  if (message.type === "PREDICT") {
-    fetchPredictionCached(message.payload)
-      .then(prediction => sendResponse({ ok: true, prediction }))
-      .catch(() => sendResponse({ ok: false, prediction: null }));
-    return true; // keep message channel open for async response
-  }
+  // Stage 1 is no longer relayed here: content.js evaluates the bundled model
+  // in the page, so an advertiser's name never leaves the browser.
 
   // ── Save scan result to storage (single writer — no race conditions) ─────
   if (message.type === "SAVE_SCAN") {
@@ -460,88 +458,5 @@ async function postResolve(url) {
     return null;
   } finally {
     clearTimeout(timer);
-  }
-}
-
-// The backend is the preferred source for Stage 1 so the deployed service
-// receives real traffic (and its logs show it). content.js waits only
-// BACKEND_WAIT_MS before falling back to the bundled model, so there is no
-// point waiting longer than that here — a slow answer would arrive after the
-// badge had already rendered.
-//
-// On failure we kick off a warm request. A spun-down free-tier instance takes
-// 30-60s to boot, so the attempt that just timed out is what wakes it: this ad
-// is served locally, the next one on the page is usually served remotely.
-const PREDICT_TIMEOUT_MS = 2500;
-
-async function postPredict(payload, timeoutMs) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(`${BACKEND_URL}/predict`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        company_name: payload.companyName,
-        platform_name: payload.platformName,
-        // Backend defaults this to 0 if absent, so an older content.js still works.
-        has_official_website: payload.hasOfficialWebsite ? 1 : 0,
-      }),
-      signal: ctrl.signal,
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return { ...json, source: "remote" };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-// Predictions are pure: the same three inputs always give the same answer, and
-// Stage 1 sees only the advertiser name, app name and website flag. Scrolling
-// the Ad Library surfaces the same advertisers over and over — one operator ran
-// six re-skinned apps in the collected data — so without a cache each repeat
-// costs another round trip, and dozens of ads arriving together meant dozens of
-// concurrent fetches. That is the lag.
-//
-// In-flight requests are cached too, so N ads for one advertiser share a single
-// request instead of racing.
-const predictionCache = new Map();
-const PREDICTION_CACHE_MAX = 300;
-
-function cacheKey(p) {
-  return `${p.companyName} ${p.platformName} ${p.hasOfficialWebsite ? 1 : 0}`;
-}
-
-function fetchPredictionCached(payload) {
-  const key = cacheKey(payload);
-  if (predictionCache.has(key)) return predictionCache.get(key);
-
-  const inflight = fetchPrediction(payload).then((result) => {
-    // Only a real answer is worth keeping. Caching a null would pin the local
-    // fallback in place for the rest of the session even once the instance woke.
-    if (!result) predictionCache.delete(key);
-    return result;
-  }).catch(() => {
-    predictionCache.delete(key);
-    return null;
-  });
-
-  predictionCache.set(key, inflight);
-  if (predictionCache.size > PREDICTION_CACHE_MAX) {
-    predictionCache.delete(predictionCache.keys().next().value);   // oldest out
-  }
-  return inflight;
-}
-
-async function fetchPrediction(payload) {
-  try {
-    return await postPredict(payload, PREDICT_TIMEOUT_MS);
-  } catch (_err) {
-    // Timed out, offline, or the instance is still booting. Nudge it so the
-    // next ad can be served remotely, and let content.js use the local model
-    // for this one.
-    warmBackend(true);
-    return null;
   }
 }

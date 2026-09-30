@@ -693,20 +693,8 @@
   }
 
   // ── Backend call via background.js ──────────────────────────────────────────
-
-  // hasOfficialWebsite comes from the SEC record matcher.js resolved for this
-  // ad. The model was trained with this signal, so omitting it at inference
-  // (the previous behaviour — backend hardcoded 0) left the model operating in
-  // a regime it was never trained on.
-  // How long the badge waits on the backend before falling back locally.
-  //
-  // A warm Render instance answers in a few hundred milliseconds, so in normal
-  // use the backend wins this race and its logs record the traffic. A spun-down
-  // instance takes 30-60s to boot, which no badge should wait for — the local
-  // model fills in immediately, and the request that just timed out is itself
-  // what wakes the instance, so the next ad on the page is usually served
-  // remotely.
-  const BACKEND_WAIT_MS = 2500;
+  // One thing only: where a link-service link leads. Stage 1 no longer goes to
+  // the backend at all — see requestStage1Prediction() below.
 
   // How long an ad through a link service waits for the backend to say where it
   // leads. Longer than background.js's own 4 s timeout, so that timeout — which
@@ -739,59 +727,26 @@
     }
   }
 
+  // ── Stage 1, in the browser only ────────────────────────────────────────────
+  // hasOfficialWebsite comes from the SEC record matcher.js resolved for this
+  // ad. The model was trained with this signal, so omitting it at inference
+  // (the previous behaviour — backend hardcoded 0) left the model operating in
+  // a regime it was never trained on.
+  //
+  // Evaluated here and nowhere else. It used to go to the backend first, so
+  // the deployed service's logs showed real traffic, with the bundled model as
+  // the fallback. But the bundled model is a bit-for-bit copy of the served one
+  // (verify_export.py asserts it), so the round trip changed no score: what it
+  // added was the advertiser's name and app title leaving the browser for every
+  // ad scanned. Without it, the one thing that ever leaves is a link-service
+  // link, for followLinkService() above.
+  //
+  // A promise, so processAd() reads the same either way. null when the model
+  // did not load: the score is then unknown and recorded as unknown, never
+  // replaced by a default.
   function requestStage1Prediction(advertiserName, appName, hasOfficialWebsite) {
-    const localResult = () =>
-      window.CrediBytesStage1?.predict(advertiserName, appName, hasOfficialWebsite) ?? null;
-
-    // The backend's /predict returns only the score, so a remotely-served ad
-    // arrived with no breakdown and the badge showed the explanatory note above
-    // an empty list. Attribution is computed here instead of being added to the
-    // API: the bundled model is a bit-for-bit copy of the deployed one
-    // (verify_export.py asserts it), so the same inputs give the same
-    // contributions either way, and this costs no round trip.
-    const withContributions = (result) => {
-      if (!result || (Array.isArray(result.contributions) && result.contributions.length)) {
-        return result;
-      }
-      return {
-        ...result,
-        contributions:
-          window.CrediBytesStage1?.explain(advertiserName, appName, hasOfficialWebsite) ?? [],
-      };
-    };
-
-    // No point waiting on the network if the context is already gone.
-    if (!extensionAlive()) return Promise.resolve(localResult());
-
-    return new Promise((resolve) => {
-      let settled = false;
-      const finish = (value) => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-      };
-
-      // Backend first, so the deployed service actually receives traffic.
-      safeSendMessage(
-        {
-          type: "PREDICT",
-          payload: {
-            companyName: advertiserName,
-            platformName: appName,
-            hasOfficialWebsite: hasOfficialWebsite ? 1 : 0,
-          },
-        },
-        (response) => {
-          const remote = response?.prediction;
-          // A null here means unreachable, cold, or context torn down — fall
-          // back rather than dropping the profile score entirely.
-          finish(remote ? withContributions(remote) : localResult());
-        }
-      );
-
-      // Safety net: the callback may simply never fire while the instance boots.
-      setTimeout(() => finish(localResult()), BACKEND_WAIT_MS);
-    });
+    return Promise.resolve(
+      window.CrediBytesStage1?.predict(advertiserName, appName, hasOfficialWebsite) ?? null);
   }
 
   // ── Verdict mapping (single source of truth) ────────────────────────────────
@@ -1999,7 +1954,8 @@
     // The badge first. It shows the verdict, which is settled here; the Stage 1
     // score is not on the badge (a percentage beside a verdict reads as that
     // verdict's confidence, and it never was one). It used to wait on Stage 1
-    // regardless — up to BACKEND_WAIT_MS per ad when the backend was asleep.
+    // regardless — up to 2.5 s per ad when the backend was asleep, back when
+    // Stage 1 went to the backend first.
     //
     // Badge mode only: the floating list and the popup render stored scans, and
     // the scan is stored once Stage 1 has answered, below.
