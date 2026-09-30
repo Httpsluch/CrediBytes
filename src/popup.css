@@ -21,24 +21,16 @@
     --brand-ink: #4d7a17;
     --on-brand:  #ffffff;
 
-    /* Six verdicts, six distinct hues. Amber vs orange was too close to read
-       at a glance, so likely-legitimate is teal and name-match is violet.
-       Revoked is the one pair that shares a hue family with another state, so
-       it goes much darker than danger — the two are both "stop", but an
-       unregistered app was never authorised and a revoked one was. */
+    /* Three states, three hues. Every verdict takes its state's colour:
+       Likely Legitimate and Name Match Only are Unverified (amber), Authority
+       Revoked is Flagged (red). The card's words say which verdict it is. */
     --v-legitimate:   #2e9e4f;
-    --v-likely:     #17868c;
-    --v-namematch:  #7a5cd6;
     --v-unverified: #c98a15;
     --v-danger:     #d62839;
-    --v-revoked:    #6d1220;
 
     --v-legitimate-bg:   #e8f6ec;
-    --v-likely-bg:     #e4f3f4;
-    --v-namematch-bg:  #f0ecfd;
     --v-unverified-bg: #fdf3e0;
     --v-danger-bg:     #fdeaec;
-    --v-revoked-bg:    #f6dfe3;
 
     --radius:    12px;
     --radius-sm: 9px;
@@ -64,18 +56,12 @@
         --on-brand:  #10160a;
 
         --v-legitimate:   #4cc46e;
-        --v-likely:     #35b3ba;
-        --v-namematch:  #a78bfa;
         --v-unverified: #e0a834;
         --v-danger:     #f0616f;
-        --v-revoked:    #e0344f;
 
         --v-legitimate-bg:   #12301d;
-        --v-likely-bg:     #0f2d2f;
-        --v-namematch-bg:  #241d3d;
         --v-unverified-bg: #322509;
         --v-danger-bg:     #351319;
-        --v-revoked-bg:    #45060f;
 
         --shadow:   0 1px 2px rgba(0,0,0,.45);
         --shadow-2: 0 4px 14px rgba(0,0,0,.5);
@@ -95,18 +81,12 @@
     --on-brand:  #10160a;
 
     --v-legitimate:   #4cc46e;
-    --v-likely:     #35b3ba;
-    --v-namematch:  #a78bfa;
     --v-unverified: #e0a834;
     --v-danger:     #f0616f;
-    --v-revoked:    #e0344f;
 
     --v-legitimate-bg:   #12301d;
-    --v-likely-bg:     #0f2d2f;
-    --v-namematch-bg:  #241d3d;
     --v-unverified-bg: #322509;
     --v-danger-bg:     #351319;
-    --v-revoked-bg:    #45060f;
 
     --shadow:   0 1px 2px rgba(0,0,0,.45);
     --shadow-2: 0 4px 14px rgba(0,0,0,.5);
@@ -214,10 +194,11 @@ html.is-sidepanel, html.is-sidepanel body {
     to   { opacity: 1; transform: none; }
 }
 .scan-item.legitimate { border-left-color: var(--v-legitimate); }
-.scan-item.likely     { border-left-color: var(--v-likely); }
-.scan-item.namematch  { border-left-color: var(--v-namematch); }
+.scan-item.likely,
+.scan-item.namematch,
 .scan-item.unverified { border-left-color: var(--v-unverified); }
-.scan-item.danger     { border-left-color: var(--v-danger); }
+.scan-item.danger,
+.scan-item.revoked    { border-left-color: var(--v-danger); }
 
 .scan-head { display: flex; align-items: flex-start; gap: 10px; }
 .scan-main { flex: 1; min-width: 0; }
@@ -238,10 +219,11 @@ html.is-sidepanel, html.is-sidepanel body {
     text-transform: uppercase; margin-top: 3px; display: block;
 }
 .legitimate .scan-mark, .legitimate .scan-mark-label { color: var(--v-legitimate); }
-.likely     .scan-mark, .likely     .scan-mark-label { color: var(--v-likely); }
-.namematch  .scan-mark, .namematch  .scan-mark-label { color: var(--v-namematch); }
+.likely     .scan-mark, .likely     .scan-mark-label,
+.namematch  .scan-mark, .namematch  .scan-mark-label,
 .unverified .scan-mark, .unverified .scan-mark-label { color: var(--v-unverified); }
-.danger     .scan-mark, .danger     .scan-mark-label { color: var(--v-danger); }
+.danger     .scan-mark, .danger     .scan-mark-label,
+.revoked    .scan-mark, .revoked    .scan-mark-label { color: var(--v-danger); }
 
 .gauge { position: relative; width: 54px; height: 54px; margin: 0 auto; }
 .gauge svg { transform: rotate(-90deg); display: block; }

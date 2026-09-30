@@ -39,6 +39,11 @@ async function scanAt(url, html) {
   const out = await page.evaluate(() => ({
     payloads: window.__sent.filter(m => m.type === "SAVE_SCAN").map(m => m.payload),
     details: [...document.querySelectorAll(".cb-detail")].map(e => e.textContent),
+    badges: [...document.querySelectorAll(".credibytes-badge")].map(b => ({
+      bar: b.querySelector(".cb-label")?.textContent || "",
+      icon: b.querySelector(".cb-icon")?.textContent || "",
+      colour: getComputedStyle(b).backgroundColor,
+    })),
   }));
   await page.close();
   return out;
@@ -153,7 +158,7 @@ const ACOM = {
 // 6. A feed ad that only links to Facebook must STILL be Name Match Only — the
 //    spoofing protection must not be undone by looking harder for a root.
 {
-  const { payloads } = await scanAt("https://www.facebook.com/", `
+  const { payloads, badges } = await scanAt("https://www.facebook.com/", `
     <div role="article">
       <a href="${ACOM.page}"><strong><span>${ACOM.advertiser}</span></strong></a>
       <span>Sponsored</span>
@@ -162,6 +167,10 @@ const ACOM = {
     </div>`);
   r.check("messenger-only feed ad stays Name Match Only",
           payloads[0]?.label === "Name Match Only", `label=${payloads[0]?.label}`);
+  // Stored as Name Match Only, shown as the Unverified state.
+  r.check("and its badge is shown as Unverified: headline, yellow, icon",
+          badges[0]?.bar === "AD UNVERIFIED" && badges[0]?.colour === "rgb(224, 170, 38)" &&
+          badges[0]?.icon === "!", JSON.stringify(badges[0]));
 }
 
 await browser.close();

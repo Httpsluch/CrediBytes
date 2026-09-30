@@ -1,7 +1,7 @@
 # CrediBytes
 
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)
-![Tests](https://img.shields.io/badge/tests-24%20suites%20%2F%20510%20assertions-2e9e4f)
+![Tests](https://img.shields.io/badge/tests-25%20suites%20%2F%20563%20assertions-2e9e4f)
 ![Models](https://img.shields.io/badge/LightGBM-2%20models%20bundled-76b729)
 ![Status](https://img.shields.io/badge/version-1.0.0-blue)
 
@@ -57,7 +57,7 @@ history.
 ### Run the tests
 
 ```bash
-node tests/run-all.mjs          # expect 24/24 suites, 510 assertions
+node tests/run-all.mjs          # expect 25/25 suites, 563 assertions
 node tests/stage3.test.mjs      # or any single suite
 ```
 
@@ -149,33 +149,36 @@ them.
 
 ### Verdict states
 
+The matcher returns six verdicts. The extension shows them as **three states**,
+and every verdict takes its state's colour, icon and bar headline.
 `verdictOf(legitimacy, status, isStoreUrl)` in `content.js` is the single source
 of truth; both the rendered badge and the stored `SAVE_SCAN` payload derive from
 it.
 
-| Badge | Bar text | Trigger |
-|---|---|---|
-| Authority Revoked | `AD AUTHORITY REVOKED` | `legitimacy === "revoked"` — evaluated **first** |
-| SEC Verified | `AD VERIFIED` | `legitimacy === "legitimate"` |
-| Likely Legitimate | `AD LIKELY LEGITIMATE` | `legitimacy === "likely_legitimate"` |
-| Name Match Only | `AD NAME MATCH ONLY` | `legitimacy === "name_match_only"` |
-| Unregistered App | `AD FLAGGED` | store URL with no registry match |
-| Unverified | `AD UNVERIFIED` | all remaining cases |
+| State | Bar text | Colour | Verdicts (stored `label`) | Trigger |
+|---|---|---|---|---|
+| Verified | `AD VERIFIED` | green | SEC Verified | `legitimacy === "legitimate"` |
+| Unverified | `AD UNVERIFIED` | amber | Likely Legitimate · Name Match Only · Unverified | `"likely_legitimate"`, `"name_match_only"`, and all remaining cases |
+| Flagged | `AD FLAGGED` | red | Unregistered App · Authority Revoked | a store URL with no registry match; `legitimacy === "revoked"`, evaluated **first** |
+
+Icons follow the state as well: the badge shows ✓ or !, and the popup card and
+detail window show ✓, ⚠ or ! (Flagged drawn as a triangle).
+
+Only the presentation is merged. Each verdict keeps its own stored `tier` and
+`label`, totals are counted by them, and the opened card says which verdict it
+is: its status line and its "What this means" sentence differ per verdict.
 
 **Unverified versus Unregistered.** *Unverified* means the advertisement could
 not be confirmed either way. *Unregistered* means the exact application is
 identified — its package ID or Apple ID was extracted — and carries no SEC
-declaration. The absence of ambiguity is what makes it the higher-risk state.
+declaration. The absence of ambiguity is what puts it in the Flagged state.
 
-**Unregistered versus Revoked** are the two red states, and they assert opposite
+**Unregistered versus Revoked** are both Flagged, and they assert opposite
 things about the link. *Unregistered*: the app was **never** authorised.
 *Revoked*: it **was**, the link genuinely belongs to that registrant, and the SEC
-has since withdrawn the authority. Revoked ranks most severe precisely because
-nothing else in the system would object to the advertisement.
-
-> The bar reads `AD FLAGGED` while the stored `label` remains
-> `"Unregistered App"`. The bar is a headline; the label is the record, and it is
-> the only field distinguishing the two red states. They should not be merged.
+has since withdrawn the authority. Both read `AD FLAGGED` in red; the opened card
+keeps them apart, with the status "Not found" for one and "Revoked" for the
+other, and a different "What this means" sentence for each.
 
 ### Settings model
 
@@ -220,7 +223,7 @@ CrediBytes/
 │   ├── background.js    20 KB  MV3 worker — storage writes, fetches, action behaviour
 │   ├── panel-init.js     2 KB  Applies theme and panel class before first paint
 │   └── popup.html/.css/.js     Popup and side panel (one file serves both surfaces)
-└── tests/                     24 Playwright suites — see tests/README.md
+└── tests/                     25 Playwright suites — see tests/README.md
 ```
 
 ### Load order
@@ -294,7 +297,7 @@ scan storage along with it.
 ## Testing
 
 ```bash
-node tests/run-all.mjs                 # full suite: 24 suites, 510 assertions
+node tests/run-all.mjs                 # full suite: 25 suites, 563 assertions
 node tests/stage3.test.mjs             # a single suite
 node tests/revoked-normalisation-parity.test.mjs
 ```
@@ -302,7 +305,8 @@ node tests/revoked-normalisation-parity.test.mjs
 Suites load the **real** content scripts into a Chromium page against mock
 Facebook markup, rather than testing extracted logic in isolation. Coverage
 spans ad detection across both Facebook surfaces, link capture and redirect
-unwrapping, all six verdict states, the revoked-list advisory, display modes and
+unwrapping, all six verdicts and the three states they are shown as, the
+revoked-list advisory, display modes and
 settings migration, theme injection, orphaned-context handling, model
 equivalence, and the Python↔JavaScript normalisation parity that keeps the
 revoked list reachable.

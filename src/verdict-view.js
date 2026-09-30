@@ -19,11 +19,16 @@
  *     danger  (unregistered app)        -> FLAGGED       Not found
  *     revoked                           -> FLAGGED       Revoked
  *
+ * Every surface follows the state, not the verdict: the badge bar, the floating
+ * widget and the popup card give each verdict its state's colour, icon and
+ * headline (AD VERIFIED / AD UNVERIFIED / AD FLAGGED).
+ *
  * The internal tier is NOT collapsed — background.js counts by it and popup.js
  * filters by it, so it stays a six-valued identifier. Only the presentation
- * narrows, and the registration line preserves what the colour cannot: a revoked
- * registrant reads "Revoked", never "Not found", because it HAS a record and
- * saying otherwise would be false.
+ * narrows, and the words preserve what the colour no longer does: the status line
+ * and "What this means" differ per verdict, so a revoked registrant reads
+ * "Revoked", never "Not found", because it HAS a record and saying otherwise
+ * would be false.
  */
 (function () {
   "use strict";

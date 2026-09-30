@@ -821,38 +821,54 @@
   }
 
   // ── Verdict mapping (single source of truth) ────────────────────────────────
-  // The four badge states. Previously this if/else was written out twice — once
-  // for the badge and once for the floating-mode save — and the copies had
-  // already drifted apart.
+  // Previously this if/else was written out twice — once for the badge and once
+  // for the floating-mode save — and the copies had already drifted apart.
+  //
+  // SIX VERDICTS, THREE STATES ON SCREEN. The matcher's six outcomes are kept in
+  // `cls` and `label`: the stored tier and totals are counted by them, and the
+  // label is the record. What the user sees is one of three states — Verified,
+  // Unverified, Flagged — each with one colour, one icon and one bar headline.
+  // What distinguishes the verdicts inside a state (Likely Legitimate from Name
+  // Match Only, a revoked registrant from an app that was never registered) is
+  // said in words, by the status line and "What this means" in the opened card.
+  const STATE = {
+    verified:   { icon: "✓", bar: "verdict.legitimate.bar", word: "ui.verified" },
+    unverified: { icon: "!", bar: "verdict.unverified.bar", word: "ui.unverified" },
+    flagged:    { icon: "!", bar: "verdict.danger.bar",     word: "ui.flagged" },
+  };
+  const makeVerdict = (cls, labelKey, state) => ({
+    cls,
+    label: T(labelKey),
+    icon: STATE[state].icon,
+    bar:  T(STATE[state].bar),
+    word: T(STATE[state].word),
+  });
 
   function verdictOf(legitimacy, status, isStoreUrl) {
-    // Checked before "legitimate" on purpose. This state is only ever reached
+    // Checked before "legitimate" on purpose. This verdict is only ever reached
     // when the ad DID verify against a declared channel — so the registrant is
     // real and the link genuine, and the problem is that the SEC has since
-    // withdrawn its authority. Ranked as the most severe of the six: an
-    // unregistered app was never authorised, whereas this one was, which is
-    // exactly what makes it credible to a user.
+    // withdrawn its authority. Shown as Flagged, like an app that was never
+    // registered; the opened card says which of the two it is.
     if (legitimacy === "revoked") {
-      return { cls: "cb-revoked", icon: "⊘", label: T("verdict.revoked.label"), bar: T("verdict.revoked.bar") };
+      return makeVerdict("cb-revoked", "verdict.revoked.label", "flagged");
     }
     if (legitimacy === "legitimate") {
-      return { cls: "cb-legitimate", icon: "✓", label: T("verdict.legitimate.label"), bar: T("verdict.legitimate.bar") };
+      return makeVerdict("cb-legitimate", "verdict.legitimate.label", "verified");
     }
     if (legitimacy === "likely_legitimate") {
-      return { cls: "cb-likely", icon: "?", label: T("verdict.likely.label"), bar: T("verdict.likely.bar") };
+      return makeVerdict("cb-likely", "verdict.likely.label", "unverified");
     }
-    // The advertiser's name is in the registry, but the ad links to a social or
-    // messaging page — never a SEC-declared channel, so the name proves
-    // nothing on its own. Ranked above Unverified because we did identify a
-    // registrant worth comparing against, and below Likely Legitimate because
-    // the link itself carries no evidence.
+    // The advertiser's name is in the registry, but the link is not a channel
+    // the registrant declared, so the name proves nothing on its own. Shown as
+    // Unverified; the card names the registrant so the user can compare.
     if (legitimacy === "name_match_only") {
-      return { cls: "cb-namematch", icon: "≈", label: T("verdict.namematch.label"), bar: T("verdict.namematch.bar") };
+      return makeVerdict("cb-namematch", "verdict.namematch.label", "unverified");
     }
     if (status === "no_reference_match" && isStoreUrl) {
-      return { cls: "cb-danger", icon: "!", label: T("verdict.danger.label"), bar: T("verdict.danger.bar") };
+      return makeVerdict("cb-danger", "verdict.danger.label", "flagged");
     }
-    return { cls: "cb-unverified", icon: "!", label: T("verdict.unverified.label"), bar: T("verdict.unverified.bar") };
+    return makeVerdict("cb-unverified", "verdict.unverified.label", "unverified");
   }
 
   // ── Where the badge goes ─────────────────────────────────────────────────────
@@ -1345,13 +1361,16 @@
     floatDrawn += slice.length;
 
     slice.forEach(scan => {
-        // Reuse the same four-state mapping as the badge so the floating
-        // widget can't disagree with the badge about a verdict. The old code
-        // had its own three-state map and never showed "Unregistered App".
+        // Reuse the badge's mapping so the floating widget can't disagree with
+        // the badge about a verdict. Rows name the state (Verified, Unverified,
+        // Flagged), as the popup tiles do; the specific verdict is in the card
+        // each row opens.
         const v = verdictOf(scan.legitimacy, scan.status, scan.isStoreUrl);
 
         const row = document.createElement("div");
-        row.className = "cb-float-row";
+        // The class carries the state colour to the row's left edge. The rules
+        // for it existed, but the class was never set, so every row was grey.
+        row.className = "cb-float-row " + v.cls;
 
         const dot = document.createElement("span");
         dot.className = "cb-float-dot " + v.cls;
@@ -1366,7 +1385,7 @@
 
         const verdict = document.createElement("span");
         verdict.className = "cb-float-verdict";
-        verdict.textContent = v.label;
+        verdict.textContent = v.word;
 
         text.appendChild(name);
         text.appendChild(verdict);
@@ -1407,10 +1426,13 @@
   // disagree about a verdict. That module exists precisely because verdictOf()
   // and the SAVE_SCAN payload were each duplicated once and drifted.
   // Mirrors VERDICT_MARK in popup.js. Kept beside the window it draws so the
-  // two surfaces are obviously meant to match.
+  // two surfaces are obviously meant to match. One mark per state: the
+  // Unverified mark for every Unverified verdict, the Flagged mark for both
+  // Flagged ones.
   const DETAIL_MARK = {
-    legitimate: "✓", likely: "?", namematch: "≈",
-    danger: "!", unverified: "⚠", revoked: "⊘",
+    legitimate: "✓",
+    likely: "⚠", namematch: "⚠", unverified: "⚠",
+    danger: "!", revoked: "!",
   };
 
   function openFloatDetail(scan) {
@@ -1759,23 +1781,24 @@
         transition: transform .14s ease, box-shadow .14s ease;
       }
       .cb-float-row:hover { transform: translateX(2px); box-shadow: 0 2px 8px var(--f-shadow); }
+      /* Three states, three colours: every verdict takes its state's colour. */
       .cb-float-row.cb-legitimate { border-left-color: #2e9e4f; }
-      .cb-float-row.cb-likely     { border-left-color: #17868c; }
-      .cb-float-row.cb-namematch  { border-left-color: #7a5cd6; }
+      .cb-float-row.cb-likely,
+      .cb-float-row.cb-namematch,
       .cb-float-row.cb-unverified { border-left-color: #c98a15; }
-      .cb-float-row.cb-danger     { border-left-color: #d62839; }
-      .cb-float-row.cb-revoked    { border-left-color: #6d1220; }
+      .cb-float-row.cb-danger,
+      .cb-float-row.cb-revoked    { border-left-color: #d62839; }
       .cb-float-dot {
         width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%;
         display: flex; align-items: center; justify-content: center;
         font-size: 11px; font-weight: 800; color: #fff;
       }
       .cb-float-dot.cb-legitimate { background: #2e9e4f; }
-      .cb-float-dot.cb-likely     { background: #17868c; }
-      .cb-float-dot.cb-namematch  { background: #7a5cd6; }
+      .cb-float-dot.cb-likely,
+      .cb-float-dot.cb-namematch,
       .cb-float-dot.cb-unverified { background: #c98a15; }
-      .cb-float-dot.cb-danger     { background: #d62839; }
-      .cb-float-dot.cb-revoked    { background: #6d1220; }
+      .cb-float-dot.cb-danger,
+      .cb-float-dot.cb-revoked    { background: #d62839; }
       .cb-float-text { display: flex; flex-direction: column; min-width: 0; }
       .cb-float-name {
         font-size: 12.5px; font-weight: 700; color: var(--f-fg);
@@ -1820,27 +1843,22 @@
         transition: box-shadow .18s ease, transform .18s ease;
       }
       .credibytes-badge:hover { box-shadow: 0 3px 12px rgba(0,0,0,.18); }
+      /* Three states on screen. Likely Legitimate and Name Match Only take the
+         Unverified yellow; Authority Revoked takes the Flagged red. What sets a
+         verdict apart within its state is said in words in the opened card —
+         a revoked registrant and a never-registered app read differently there. */
       .credibytes-badge.cb-legitimate,
       #cb-float-detail-header.cb-legitimate { background:#2e9e4f; color:#fff; }
-      .credibytes-badge.cb-likely,
-      #cb-float-detail-header.cb-likely     { background:#17868c; color:#fff; }
       .credibytes-badge.cb-unverified,
-      #cb-float-detail-header.cb-unverified { background:#e0aa26; color:#3d2c00; }
-      .credibytes-badge.cb-danger,
-      #cb-float-detail-header.cb-danger     { background:#d62839; color:#fff; }
-      /* Violet: deliberately not green (not verified) and not red (not an
-         accusation) — a registrant was identified but the link proves nothing. */
+      .credibytes-badge.cb-likely,
       .credibytes-badge.cb-namematch,
-      #cb-float-detail-header.cb-namematch  { background:#7a5cd6; color:#fff; }
-      /* Darker than cb-danger and separated by a ring, because these two are the
-         only red states and they mean opposite things about the link: an
-         unregistered app was never authorised, a revoked one was. Hue alone is
-         too weak a distinction to carry that. */
+      #cb-float-detail-header.cb-unverified,
+      #cb-float-detail-header.cb-likely,
+      #cb-float-detail-header.cb-namematch  { background:#e0aa26; color:#3d2c00; }
+      .credibytes-badge.cb-danger,
       .credibytes-badge.cb-revoked,
-      #cb-float-detail-header.cb-revoked {
-        background:#6d1220; color:#fff;
-        box-shadow: inset 0 0 0 2px rgba(255,255,255,.28);
-      }
+      #cb-float-detail-header.cb-danger,
+      #cb-float-detail-header.cb-revoked    { background:#d62839; color:#fff; }
 
       /* Official channels are real links. They must look reachable inside a
          dense panel, and must not collapse the badge when clicked. */
@@ -1863,7 +1881,9 @@
         font-size: 12px; font-weight: 800;
         background: rgba(255,255,255,.25); color: inherit;
       }
-      .credibytes-badge.cb-unverified .cb-icon { background: rgba(0,0,0,.18); }
+      .credibytes-badge.cb-unverified .cb-icon,
+      .credibytes-badge.cb-likely .cb-icon,
+      .credibytes-badge.cb-namematch .cb-icon { background: rgba(0,0,0,.18); }
 
       .credibytes-badge .cb-label { flex: 1; min-width: 0; }
 
@@ -1875,9 +1895,13 @@
         transition: background .16s ease, transform .16s ease;
       }
       .credibytes-badge .cb-toggle:active { transform: scale(.94); }
-      .credibytes-badge.cb-unverified .cb-toggle { background: rgba(0,0,0,.14); }
+      .credibytes-badge.cb-unverified .cb-toggle,
+      .credibytes-badge.cb-likely .cb-toggle,
+      .credibytes-badge.cb-namematch .cb-toggle { background: rgba(0,0,0,.14); }
       .credibytes-badge .cb-toggle:hover { background: rgba(255,255,255,.34); }
-      .credibytes-badge.cb-unverified .cb-toggle:hover { background: rgba(0,0,0,.22); }
+      .credibytes-badge.cb-unverified .cb-toggle:hover,
+      .credibytes-badge.cb-likely .cb-toggle:hover,
+      .credibytes-badge.cb-namematch .cb-toggle:hover { background: rgba(0,0,0,.22); }
       .credibytes-badge .cb-toggle:focus-visible {
         outline: 2px solid currentColor; outline-offset: 2px;
       }

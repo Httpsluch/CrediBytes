@@ -197,14 +197,21 @@ async function matcherPage() {
     return {
       cls: badge?.className || "",
       bar: document.querySelector(".cb-label")?.textContent || "",
+      icon: document.querySelector(".credibytes-badge .cb-icon")?.textContent || "",
+      colour: badge ? getComputedStyle(badge).backgroundColor : "",
       detail: document.querySelector(".cb-detail")?.textContent || "",
       saved: window.__sent.find(m => m.type === "SAVE_SCAN")?.payload || null,
     };
   });
 
+  // Shown as the Flagged state, like an unregistered app: same headline, red and
+  // icon. The verdict itself stays distinct — its own class, stored tier and
+  // label, and the wording of the opened card below.
   r.check("badge uses the revoked class", /cb-revoked/.test(out.cls), out.cls);
   r.check("badge is not also styled as danger", !/cb-danger/.test(out.cls), out.cls);
-  r.check("bar text names the state", /AUTHORITY REVOKED/.test(out.bar), out.bar);
+  r.check("bar reads the Flagged headline", out.bar === "AD FLAGGED", out.bar);
+  r.check("badge wears the Flagged red", out.colour === "rgb(214, 40, 57)", out.colour);
+  r.check("badge shows the Flagged icon", out.icon === "!", out.icon);
   r.check("detail explains the link is genuine",
           /link in this ad is genuine/i.test(out.detail), out.detail.slice(0, 160));
   r.check("detail states what was withdrawn",

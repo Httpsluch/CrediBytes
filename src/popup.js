@@ -12,15 +12,17 @@
 // Mirrors verdictOf() in content.js. Kept as data rather than an if/else chain
 // so the badge, the tiles and the cards cannot drift apart again.
 
+// The six verdicts stay distinct here because totals are counted and filtered by
+// them. How each one LOOKS is decided by its state (Verified, Unverified,
+// Flagged): the colour in popup.css, the mark in VERDICT_MARK, the word in
+// verdict-view.js.
 const TIERS = {
-  // `labelKey` rather than a literal: the module loads once, but the language can
-  // change while the popup is open, so the text has to be resolved at render.
-  legitimate: { cls: "legitimate", mark: "✓", labelKey: "ui.tierVerified" },
-  likely:     { cls: "likely",     mark: "?", labelKey: "ui.tierLikely" },
-  namematch:  { cls: "namematch",  mark: "≈", labelKey: "ui.tierNamematch" },
-  danger:     { cls: "danger",     mark: "!", labelKey: "ui.tierDanger" },
-  unverified: { cls: "unverified", mark: "⚠", labelKey: "ui.tierUnverified" },
-  revoked:    { cls: "revoked",    mark: "⊘", labelKey: "ui.tierRevoked" },
+  legitimate: { cls: "legitimate" },
+  likely:     { cls: "likely" },
+  namematch:  { cls: "namematch" },
+  danger:     { cls: "danger" },
+  unverified: { cls: "unverified" },
+  revoked:    { cls: "revoked" },
 };
 
 // One shape, derived from TIERS. This literal was written out four separate
@@ -54,10 +56,12 @@ const FILTER_TIERS = {
 // Rendered in batches as the feed is scrolled rather than capped. The old fixed
 // RENDER_LIMIT existed because drawing every stored row at once stutters during
 // active scanning; batching solves that without hiding anything.
-// Drawn in the round/triangle badge on the right of each card.
+// Drawn in the round/triangle badge on the right of each card. One mark per
+// state, matching DETAIL_MARK in content.js.
 const VERDICT_MARK = {
-  legitimate: "✓", likely: "?", namematch: "≈",
-  danger: "!", unverified: "⚠", revoked: "⊘",
+  legitimate: "✓",
+  likely: "⚠", namematch: "⚠", unverified: "⚠",
+  danger: "!", revoked: "!",
 };
 
 const BATCH = 40;

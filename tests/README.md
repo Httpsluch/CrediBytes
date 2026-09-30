@@ -1,7 +1,7 @@
 # Extension Tests
 
-![Suites](https://img.shields.io/badge/suites-24-4285F4)
-![Assertions](https://img.shields.io/badge/assertions-510-2e9e4f)
+![Suites](https://img.shields.io/badge/suites-25-4285F4)
+![Assertions](https://img.shields.io/badge/assertions-563-2e9e4f)
 ![Runner](https://img.shields.io/badge/Playwright-Chromium-45ba4b)
 
 Browser tests that load the **real** content scripts into a Chromium page
@@ -59,7 +59,7 @@ stub is also required: without it `popup.js` loaded twice and threw
 | Suite | Assertions | Covers |
 |---|---|---|
 | `ad-detection` | 21 | Advertiser-name extraction in the news feed (no `role="article"`) and in search results; noise rejection; the fuzzy suggestion path, including a generic link-preview headline no longer burying the brand; an ad linking to a declared channel scanned whatever its wording, with a website declared under a path (Grab) counting only within that path |
-| `ad-library-root` | 11 | Ad Library cards rooted on the Library ID marker; four cards in one grid judged independently; two news-feed regression checks proving that path is untouched |
+| `ad-library-root` | 12 | Ad Library cards rooted on the Library ID marker; four cards in one grid judged independently; two news-feed regression checks proving that path is untouched; a Messenger-only ad stored as Name Match Only and shown as Unverified |
 | `ad-label-variants` | 15 | Accounts whose ad label is not "Sponsored": the measured `/ads/about` link with an `aria-labelledby` "Ad" label in a closed shadow root, each signal alone, and the Filipino "May Sponsor"; signals filled in after the post appears (attribute changes only) badged within about a second; bare text "Ad", long labels, the link inside a menu, and an ordinary link getting its address not counting |
 | `badge-placement` | 52 | Feed ads rooted on the post (`<article>`, or the `aria-posinset` story 18 levels up) rather than the header row, as a probe of the live feed showed; the feed badge full width directly above the header row (avatar and name), found by structure and checked at two card widths, never in the name column or the row, even when the last-resort root is one of them; one badge and one saved scan per ad; the Ad Library badge just above the ad preview; the closed bar claiming no `z-index`, so the sticky filter bar stays on top; the analysis still floating, lifted only while open; in the Ad Library, closing when the page scrolls the card up toward the filter bar but not when the analysis itself is scrolled, with overscroll contained |
 | `ad-library-caption` | 7 | Destination read from displayed caption text when a preview exposes no outbound link; provenance disclosed on the badge |
@@ -73,7 +73,8 @@ stub is also required: without it `popup.js` loaded twice and threw
 |---|---|---|
 | `stage3` | 66 | Feature order and count; missing values becoming `NaN` rather than `0`; Play dataset identification by shape; Data safety parsing on both stores; Apple privacy-policy extraction; service-worker scope |
 | `i18n` | 48 | Key parity between `en` and `tl`; nested descriptor resolution; stored scans re-rendering in the language selected now |
-| `revoked-list` | 38 | Advisory versus verdict paths; that a name match never changes a verdict, is never worded as a finding about the advertiser, and never demotes a URL-verified advertisement |
+| `revoked-list` | 40 | Advisory versus verdict paths; that a name match never changes a verdict, is never worded as a finding about the advertiser, and never demotes a URL-verified advertisement; a revoked registrant shown as Flagged (headline, red, icon) while its label and wording stay its own |
+| `three-states` | 50 | Six verdicts shown as three states: every verdict takes its state's colour, icon, headline and word in the floating widget rows, the detail window and the popup cards; the two Flagged verdicts still explain themselves differently; revoked cards get the Flagged edge colour |
 | `analysis-detail` | 42 | Expanded card sections, evidence rows, declared-channel links, possible-match presentation |
 | `local-stage1` | 15 | In-page tree walk and sigmoid; risk-tier banding; feature construction including the empty-app-name imputation |
 | `backend-precedence` | 11 | A warm backend wins the race; a cold one loses and the local model fills in; a `null` result is never cached |
