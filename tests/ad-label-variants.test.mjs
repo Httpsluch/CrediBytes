@@ -143,6 +143,73 @@ async function run(html) {
           m2.saved.length === 0 && m2.badges === 0, JSON.stringify(m2.saved));
 }
 
+// 3b. Signals filled in AFTER the post appears, by attribute changes alone.
+//
+// Measured on the affected account: a post carries no readable ad signal until
+// the mouse passes over its "Ad" label, which is when Facebook sets the
+// /ads/about address and the aria-labelledby reference. The observer reacted
+// only to added nodes, so such an ad waited for an unrelated insertion (the
+// next post, a hover card) — ~20 s of scrolling in practice.
+async function lateFill(html, fill) {
+  const page = await browser.newPage();
+  await page.setContent(`<!doctype html><body><div role="feed" style="width:500px">${html}</div></body>`);
+  await page.evaluate(() => {
+    for (const host of document.querySelectorAll(".ad-host")) {
+      host.attachShadow({ mode: "closed" }).textContent = "Ad";
+    }
+  });
+  await page.addScriptTag({ content: CHROME_SHIM });
+  for (const f of SCRIPTS) await page.addScriptTag({ content: await read(f) });
+  await page.waitForTimeout(1500);            // the first scan has run and found nothing
+  const before = await page.evaluate(() => document.querySelectorAll(".credibytes-badge").length);
+  const ms = await page.evaluate((fill) => new Promise((done) => {
+    const t0 = performance.now();
+    new Function(fill)();                     // Facebook fills the signals in — nothing is added
+    const iv = setInterval(() => {
+      const t = performance.now() - t0;
+      if (document.querySelector(".credibytes-badge") || t > 5000) {
+        clearInterval(iv);
+        done(document.querySelector(".credibytes-badge") ? Math.round(t) : null);
+      }
+    }, 20);
+  }), fill);
+  await page.close();
+  return { before, ms };
+}
+
+{
+  const unlabelled = `<a id="about" role="link" tabindex="0"><span>` +
+    `<span id="lbl" style="display:inline-block"><span class="ad-host"></span></span></span></a>`;
+  const both = await lateFill(post(unlabelled) + target("_r_7r_", "Ad"), `
+    document.getElementById("about").setAttribute("href", "/ads/about/?__cft__[0]=x");
+    document.getElementById("lbl").setAttribute("aria-labelledby", "_r_7r_");`);
+  r.check("late signals: nothing is badged before they are filled in", both.before === 0, `before=${both.before}`);
+  r.check("late signals: the badge follows within about a second, with nothing else changing",
+          both.ms !== null && both.ms < 1600, `badge after ${both.ms ?? "never (5 s cap)"} ms`);
+
+  const hrefOnly = await lateFill(post(unlabelled), `
+    document.getElementById("about").setAttribute("href", "/ads/about/?__cft__[0]=x");`);
+  r.check("late signals: the /ads/about address alone is enough",
+          hrefOnly.ms !== null && hrefOnly.ms < 1600, `badge after ${hrefOnly.ms ?? "never"} ms`);
+
+  const ariaOnly = await lateFill(post(`<a id="plain" role="link" href="#"><span>·</span></a>`), `
+    document.getElementById("plain").setAttribute("aria-label", "Sponsored");`);
+  r.check("late signals: an aria-label becoming 'Sponsored' is enough",
+          ariaOnly.ms !== null && ariaOnly.ms < 1600, `badge after ${ariaOnly.ms ?? "never"} ms`);
+
+  // Ordinary link addresses change all the time as the mouse moves; one that
+  // produces no ad signal must not make an ad out of an organic post.
+  const organic = `
+    <div role="article">
+      <div><a role="link" href="https://www.facebook.com/juan"><strong><span>Juan Dela Cruz</span></strong></a>
+        <a id="ts" role="link" tabindex="0"><span>2h</span></a></div>
+      <div>Got a cash loan approved today! Online lending is fast.</div>
+    </div>`;
+  const plain = await lateFill(organic, `
+    document.getElementById("ts").setAttribute("href", "/juan/posts/123");`);
+  r.check("an ordinary link getting its address does not make an ad", plain.ms === null, `badge after ${plain.ms} ms`);
+}
+
 // 4. REGRESSION — the account that always worked keeps working, and its two
 //    signals (aria-label and the /ads/about link are the same element) still
 //    produce one scan, not two.

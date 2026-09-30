@@ -421,6 +421,34 @@
   // Relative on the page; absolute in case a surface renders it that way.
   const AD_ABOUT_LINK = 'a[href^="/ads/about"], a[href*="facebook.com/ads/about"]';
 
+  // The text of the element(s) aria-labelledby names — what a screen reader
+  // announces for it.
+  function labelledbyText(el) {
+    return (el.getAttribute("aria-labelledby") || "").split(/\s+/)
+      .map(id => document.getElementById(id)?.textContent || "").join(" ");
+  }
+
+  // Whether an attribute change just turned an element into an ad marker.
+  //
+  // On some accounts a post carries NO readable ad signal when it appears: the
+  // /ads/about address and the aria-labelledby reference are filled in only
+  // once the mouse passes over the "Ad" label. Those are attribute changes, and
+  // the observer used to react only to added nodes — so the ad waited for some
+  // unrelated insertion (the next post loading, a hover card opening) before
+  // anything scanned it. Measured on that account: ~20 s of scrolling, or ~5 s
+  // after hovering the label and then the advertiser's name.
+  //
+  // Only changes that PRODUCE a marker count. Facebook rewrites link addresses
+  // constantly as the mouse moves, and scanning on every one would be waste.
+  function becameAdMarker(m) {
+    if (m.type !== "attributes") return false;
+    const el = m.target;
+    if (m.attributeName === "href") return el.matches?.(AD_ABOUT_LINK) === true;
+    if (m.attributeName === "aria-label") return isAdLabel(el.getAttribute("aria-label"));
+    if (m.attributeName === "aria-labelledby") return isAdLabel(labelledbyText(el));
+    return false;
+  }
+
   function findAdElements() {
     const candidates = new Set();
 
@@ -467,9 +495,7 @@
     });
 
     document.querySelectorAll("[aria-labelledby]").forEach(el => {
-      const label = el.getAttribute("aria-labelledby").split(/\s+/)
-        .map(id => document.getElementById(id)?.textContent || "").join(" ");
-      if (isAdLabel(label)) consider(el);
+      if (isAdLabel(labelledbyText(el))) consider(el);
     });
 
     document.querySelectorAll("span, a").forEach(el => {
@@ -2220,10 +2246,15 @@
       }
     });
 
+    // Added nodes, as before — and the three attributes an ad label can arrive
+    // in after its post is already on the page (see becameAdMarker).
     observer = new MutationObserver((mutations) => {
-      if (mutations.some(m => m.addedNodes.length > 0)) debouncedScan();
+      if (mutations.some(m => m.addedNodes.length > 0 || becameAdMarker(m))) debouncedScan();
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, {
+      childList: true, subtree: true,
+      attributes: true, attributeFilter: ["href", "aria-label", "aria-labelledby"],
+    });
   }
 
   if (document.readyState === "loading") {
