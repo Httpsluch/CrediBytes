@@ -146,7 +146,7 @@ const browser = await chromium.launch({ headless: true });
 {
   const bg = await fs.readFile(path.join(SRC, "background.js"), "utf8");
   const queueSrc = bg.slice(bg.indexOf("const MAX_SCANS"),
-                            bg.indexOf("// ── Keeping the backend warm"));
+                            bg.indexOf("// ── Keeping the fallback backend warm"));
 
   const page = await browser.newPage();
   await page.setContent("<!doctype html><body></body>");

@@ -1,7 +1,7 @@
 # Extension Tests
 
 ![Suites](https://img.shields.io/badge/suites-24-4285F4)
-![Assertions](https://img.shields.io/badge/assertions-508-2e9e4f)
+![Assertions](https://img.shields.io/badge/assertions-510-2e9e4f)
 ![Runner](https://img.shields.io/badge/Playwright-Chromium-45ba4b)
 
 Browser tests that load the **real** content scripts into a Chromium page
@@ -42,7 +42,7 @@ srcUrl, loadContentScripts }`. A typical suite:
    `about:blank` cannot exercise them. Setting content after navigating keeps the
    URL.
 3. Injects `CHROME_SHIM`, then the content scripts **in manifest order**.
-4. Waits for the scan (at most 1 s after the page changes) and for any link-service lookup the fixture triggers.
+4. Waits past `BACKEND_WAIT_MS` (2,500 ms) so the Stage 1 race resolves.
 5. Reads `window.__sent` — the messages the content script tried to send.
 
 **Playwright rather than Node's `vm`.** Node's `vm` has no `URL` global, so
@@ -75,8 +75,8 @@ stub is also required: without it `popup.js` loaded twice and threw
 | `i18n` | 48 | Key parity between `en` and `tl`; nested descriptor resolution; stored scans re-rendering in the language selected now |
 | `revoked-list` | 38 | Advisory versus verdict paths; that a name match never changes a verdict, is never worded as a finding about the advertiser, and never demotes a URL-verified advertisement |
 | `analysis-detail` | 42 | Expanded card sections, evidence rows, declared-channel links, possible-match presentation |
-| `local-stage1` | 15 | In-page tree walk and sigmoid; risk-tier banding; feature construction including the empty-app-name imputation; the backend never asked |
-| `stage1-in-browser` | 9 | No Stage 1 request ever leaves the page, even with something ready to answer one; the stored score is the bundled model's; with the model missing the score is recorded as unknown and still nothing is sent |
+| `local-stage1` | 15 | In-page tree walk and sigmoid; risk-tier banding; feature construction including the empty-app-name imputation |
+| `backend-precedence` | 11 | A warm backend wins the race; a cold one loses and the local model fills in; a `null` result is never cached |
 | `revoked-normalisation-parity` | 3 | Python and JavaScript normalise all 1,413 revoked names identically |
 
 ### Interface and platform

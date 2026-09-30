@@ -280,12 +280,10 @@ const browser = await chromium.launch({ headless: true });
   await page.close();
 }
 
-// ── Every stored score carries its breakdown ─────────────────────────────────
-// The backend's /predict returns only the score, so a remotely-served ad once
+// ── A backend-served score must carry a breakdown too ────────────────────────
+// The backend's /predict returns only the score. A remotely-served ad therefore
 // rendered the explanatory note above an EMPTY list — reported from a live
-// EZLoan scan. Stage 1 now runs only in the page, where the breakdown always
-// comes with the score; this keeps a backend-shaped answer on offer to prove
-// it is never used.
+// EZLoan scan. content.js now attributes locally whichever source answered.
 {
   const page = await browser.newPage();
   await page.route("**/*", route =>
@@ -299,8 +297,7 @@ const browser = await chromium.launch({ headless: true });
       <a href="https://play.google.com/store/apps/details?id=com.sploan.tech.ezloan">Install</a>
     </div>`);
 
-  // Shim WOULD answer PREDICT the way the backend did (no contributions field).
-  // Stage 1 no longer asks, so this answer must never reach the scan.
+  // Shim answers PREDICT the way the real backend does: no contributions field.
   await page.addScriptTag({ content: `
     window.__sent = []; window.__listeners = [];
     window.__store = { settings: { scanningEnabled: true, displayMode: "badge" }, scans: [] };
@@ -330,10 +327,9 @@ const browser = await chromium.launch({ headless: true });
   const saved = await page.evaluate(() =>
     window.__sent.find(m => m.type === "SAVE_SCAN")?.payload || null);
 
-  r.check("the score is the bundled model's, not a relayed one",
-          typeof saved?.prob === "number" && saved.prob !== 0.23, String(saved?.prob));
+  r.check("remote score is used", saved?.prob === 0.23, String(saved?.prob));
   r.check("verdict still from Stage 2", saved?.label === "SEC Verified", saved?.label);
-  r.check("the scan carries a breakdown",
+  r.check("backend-served scan still gets a breakdown",
           Array.isArray(saved?.contributions) && saved.contributions.length > 0,
           JSON.stringify(saved?.contributions));
   // Deliberately NOT asserting a specific feature here. An earlier version

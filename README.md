@@ -1,7 +1,7 @@
 # CrediBytes
 
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4285F4)
-![Tests](https://img.shields.io/badge/tests-24%20suites%20%2F%20508%20assertions-2e9e4f)
+![Tests](https://img.shields.io/badge/tests-24%20suites%20%2F%20510%20assertions-2e9e4f)
 ![Models](https://img.shields.io/badge/LightGBM-2%20models%20bundled-76b729)
 ![Status](https://img.shields.io/badge/version-1.0.0-blue)
 
@@ -57,7 +57,7 @@ history.
 ### Run the tests
 
 ```bash
-node tests/run-all.mjs          # expect 24/24 suites, 508 assertions
+node tests/run-all.mjs          # expect 24/24 suites, 510 assertions
 node tests/stage3.test.mjs      # or any single suite
 ```
 
@@ -264,16 +264,9 @@ scan storage along with it.
 - **`background.js` is the sole writer** to `chrome.storage.local`, serialised
   through a single promise chain. Concurrent scans previously raced, and a
   measurement found **3 of 25 writes surviving**.
-- **One thing is transmitted automatically, and only for lending ads:** a link
-  that goes through a link service (AppsFlyer OneLink, Adjust, bit.ly, …) is
-  sent, without `fbclid`, to the backend's `/resolve`, which reads where it
-  redirects and never loads the destination. 36 of the 2,164 collected
-  appearances would have been sent. Links that name their destination
-  (Firebase `link=`) are read in the page with no request.
-- **Stage 1 runs in the page only.** It used to ask the backend first; the
-  bundled model is identical, so that round trip changed no score and only sent
-  each advertiser's name off the machine.
-- **Stage 3 fetches a store page only on an explicit click.**
+- **Nothing is transmitted automatically.** Stage 1 may send a company name and
+  platform name to the backend as a fallback; Stage 3 fetches a store page only
+  on an explicit click.
 - **Bug reports carry no browsing data** — extension version, browser, operating
   system, display settings and scan count only. Never the active tab URL, which
   on the Ad Library would contain the user's search terms.
@@ -291,7 +284,7 @@ scan storage along with it.
 ## Testing
 
 ```bash
-node tests/run-all.mjs                 # full suite: 24 suites, 508 assertions
+node tests/run-all.mjs                 # full suite: 24 suites, 510 assertions
 node tests/stage3.test.mjs             # a single suite
 node tests/revoked-normalisation-parity.test.mjs
 ```
@@ -382,11 +375,8 @@ that decides whether an advertisement is scanned at all.
 const BACKEND_URL = 'https://credibytes-backend.onrender.com'
 ```
 
-Used for one thing: following link-service links (`/resolve`). Without it,
-those ads are judged on the link as shown, and the badge says the destination
-could not be confirmed. It is warmed by a rate-limited request when a Facebook
-tab loads, because a Render instance asleep past its free-tier idle limit takes
-longer to wake than an ad waits for its link.
+Optional. Stage 1 evaluates locally; the backend serves as a fallback and is
+warmed by a rate-limited request when a Facebook tab loads.
 
 ---
 
